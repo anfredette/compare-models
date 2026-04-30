@@ -1,0 +1,81 @@
+{% from "macros.j2" import render_table, render_h2h %}
+# Model Comparison: {{ model_names | join(' vs ') }}
+
+**Date:** {{ date }}
+
+**Models compared:** {{ model_names | join(', ') }}
+
+{% if sources|length > 1 -%}
+| Section | Models Found | Evaluation Method |
+|---------|-------------|-------------------|
+{% for s in sources -%}
+| [Part {{ loop.index }}: {{ s.source_name }}](#part-{{ loop.index }}-{{ s.source_name | lower | replace(' ', '-') }}) | {{ s.models_found | join(', ') or 'None' }} | {{ s.source_description }} |
+{% endfor %}
+{% endif %}
+---
+{% for source in sources %}
+
+# Part {{ loop.index }}: {{ source.source_name }} {{ source.source_description }}
+
+**Source:** {{ source.source_name }}
+{% if source.models_not_found %}
+
+> **Note:** The following models were not found in this source: {{ source.models_not_found | join(', ') }}
+{% endif %}
+
+## About {{ source.source_name }}
+
+{{ source.methodology }}
+
+{% if source.models_found -%}
+**Models evaluated:** {{ source.models_found | join(', ') }}
+{% endif %}
+
+---
+{% if source.global_rankings %}
+
+## Global Rankings
+{% for gt in source.global_rankings %}
+
+### {{ gt.title }}
+
+{{ render_table(gt) }}
+{% endfor %}
+
+---
+{% endif %}
+{% for table in source.comparison_tables %}
+
+## {{ table.title }}
+
+{{ render_table(table) }}
+{% endfor %}
+{% if source.head_to_heads %}
+{% for h2h in source.head_to_heads %}
+
+## Head-to-Head: {{ h2h.model_a }} vs {{ h2h.model_b }}
+
+{{ h2h.model_a }} wins {{ h2h.a_wins }} of {{ h2h.dimensions|length }} categories{% if h2h.ties %}, {{ h2h.ties }} tied{% endif %}.
+
+{{ render_h2h(h2h) }}
+{% endfor %}
+{% endif %}
+
+---
+
+## {{ source.source_name }} Key Findings
+
+{% for f in source.findings %}
+{{ loop.index }}. {{ f }}
+{% endfor %}
+
+---
+{% endfor %}
+{% if overall_conclusions %}
+
+# Overall Conclusions
+
+{% for c in overall_conclusions %}
+{{ loop.index }}. {{ c }}
+{% endfor %}
+{% endif %}

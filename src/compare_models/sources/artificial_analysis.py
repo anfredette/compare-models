@@ -80,23 +80,29 @@ def _load_models(data_path: Path) -> list[AAModel]:
     return [AAModel(**m) for m in raw]
 
 
+def _normalize(s: str) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
 def _match_models(
     models: list[AAModel], names: list[str], *, families: bool = False
 ) -> tuple[list[AAModel], list[str]]:
     if families:
         matched: list[AAModel] = []
         for name in names:
-            name_lower = name.lower()
-            matched.extend(m for m in models if name_lower in m.name.lower())
+            norm = _normalize(name)
+            matched.extend(m for m in models if norm in _normalize(m.name))
         return list({m.name: m for m in matched}.values()), []
 
-    name_lower_map = {n.lower(): n for n in names}
     found: list[AAModel] = []
     found_names: set[str] = set()
 
-    for model in models:
-        for search_name, orig_name in name_lower_map.items():
-            if search_name in model.name.lower() or search_name in model.slug.lower():
+    for orig_name in names:
+        norm_search = _normalize(orig_name)
+        for model in models:
+            if norm_search in _normalize(model.name) or norm_search in _normalize(model.slug):
                 found.append(model)
                 found_names.add(orig_name)
                 break

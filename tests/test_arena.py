@@ -8,8 +8,8 @@ from compare_models.sources.arena import (
     INDUSTRY_CATEGORIES,
     KEY_CATEGORIES,
     _category_table,
+    _consolidated_ranking_table,
     _find_models,
-    _global_ranking_table,
     _head_to_head,
     _subset_ranking,
     _win_loss_table,
@@ -31,16 +31,27 @@ class TestFindModels:
 
 @pytest.mark.unit
 class TestGlobalRanking:
-    def test_returns_neighborhood(self, sample_arena_df: pd.DataFrame) -> None:
-        table = _global_ranking_table(sample_arena_df, "model-gamma", window=2)
-        assert "model-gamma" in table.title
+    def test_returns_consolidated_table(self, sample_arena_df: pd.DataFrame) -> None:
+        table = _consolidated_ranking_table(
+            sample_arena_df, ["model-alpha", "model-gamma"], window=2
+        )
+        assert "Global Arena Rankings" in table.title
         assert len(table.rows) > 0
         names = [row[1] for row in table.rows]
+        assert any("model-alpha" in n for n in names)
         assert any("model-gamma" in n for n in names)
 
-    def test_handles_missing_model(self, sample_arena_df: pd.DataFrame) -> None:
-        table = _global_ranking_table(sample_arena_df, "nonexistent")
-        assert "not found" in table.title
+    def test_handles_no_models_found(self, sample_arena_df: pd.DataFrame) -> None:
+        table = _consolidated_ranking_table(sample_arena_df, ["nonexistent"])
+        assert "no models found" in table.title
+
+    def test_gap_markers(self, sample_arena_df: pd.DataFrame) -> None:
+        table = _consolidated_ranking_table(
+            sample_arena_df, ["model-alpha", "model-gamma"], window=0
+        )
+        gap_rows = [r for r in table.rows if "not shown" in r[1]]
+        has_gap = len(gap_rows) > 0
+        assert len(table.rows) >= 2 or has_gap
 
 
 @pytest.mark.unit

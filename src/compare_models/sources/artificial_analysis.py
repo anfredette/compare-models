@@ -45,7 +45,7 @@ class AAModel(BaseModel):
     name: str
     slug: str
     organization: str
-    intelligence_index: int
+    intelligence_index: int | None = None
     speed_tps: float | None = None
     ttft_s: float | None = None
     input_price_per_1m: float | None = None
@@ -77,7 +77,7 @@ class AAModel(BaseModel):
 def _load_models(data_path: Path) -> list[AAModel]:
     with open(data_path) as f:
         raw = json.load(f)
-    return [AAModel(**m) for m in raw]
+    return [m for m in (AAModel(**entry) for entry in raw) if m.intelligence_index is not None]
 
 
 def _normalize(s: str) -> str:
@@ -114,7 +114,7 @@ def _match_models(
 def _comparison_table(
     models: list[AAModel], *, title: str, include_params: bool = True
 ) -> ComparisonTable:
-    sorted_models = sorted(models, key=lambda m: m.intelligence_index, reverse=True)
+    sorted_models = sorted(models, key=lambda m: m.intelligence_index or 0, reverse=True)
 
     if include_params:
         headers = [
@@ -175,87 +175,137 @@ def _comparison_table(
     )
 
 
-def _global_ranking_table(
-    all_models: list[AAModel], target_name: str, window: int = 5
+def _consolidated_ranking_table(
+    all_models: list[AAModel], matched: list[AAModel], window: int = 5
 ) -> ComparisonTable:
-    sorted_all = sorted(all_models, key=lambda m: m.intelligence_index, reverse=True)
+    sorted_all = sorted(all_models, key=lambda m: m.intelligence_index or 0, reverse=True)
+    total = len(sorted_all)
+    target_names = {m.name for m in matched}
 
-    target_idx = None
+    positions: list[int] = []
     for i, m in enumerate(sorted_all):
-        if target_name.lower() in m.name.lower():
-            target_idx = i
-            break
+        if m.name in target_names:
+            positions.append(i)
 
-    if target_idx is None:
+    if not positions:
         return ComparisonTable(
-            title=f"{target_name} (not found in AA data)",
+            title="Global AA Rankings (no models found)",
             headers=[],
             rows=[],
         )
 
-    target_model = sorted_all[target_idx]
-    rank = target_idx + 1
-    total = len(sorted_all)
-    start = max(0, target_idx - window)
-    end = min(total, target_idx + window + 1)
+    ranges: list[tuple[int, int]] = []
+    for pos in sorted(positions):
+        start = max(0, pos - window)
+        end = min(total - 1, pos + window)
+        ranges.append((start, end))
+
+    merged: list[tuple[int, int]] = [ranges[0]]
+    for start, end in ranges[1:]:
+        prev_start, prev_end = merged[-1]
+        if start - prev_end <= 10:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
 
     rows: list[list[str]] = []
-    for i in range(start, end):
-        m = sorted_all[i]
-        r = i + 1
-        is_target = m.name == target_model.name
-        fmt_rank = f"**{r}**" if is_target else str(r)
-        fmt_name = f"**{m.name}**" if is_target else m.name
-        fmt_score = f"**{m.intelligence_index}**" if is_target else str(m.intelligence_index)
-        rows.append([fmt_rank, fmt_name, fmt_score])
+    for seg_idx, (seg_start, seg_end) in enumerate(merged):
+        if seg_idx > 0:
+            prev_end = merged[seg_idx - 1][1]
+            gap = seg_start - prev_end - 1
+            rows.append(["", f"*[{gap} models not shown]*", ""])
+
+        for i in range(seg_start, seg_end + 1):
+            m = sorted_all[i]
+            r = i + 1
+            is_target = m.name in target_names
+            fmt_rank = f"**{r}**" if is_target else str(r)
+            fmt_name = f"**{m.name}**" if is_target else m.name
+            fmt_score = f"**{m.intelligence_index}**" if is_target else str(m.intelligence_index)
+            rows.append([fmt_rank, fmt_name, fmt_score])
+
+    ranked_names = []
+    for pos in sorted(positions):
+        m = sorted_all[pos]
+        ranked_names.append(f"{m.name} (rank {pos + 1})")
+    title = f"Global AA Rankings ({total} models total): {', '.join(ranked_names)}"
 
     return ComparisonTable(
-        title=f"{target_model.name} (score {target_model.intelligence_index}, ~rank {rank} of {total})",
+        title=title,
         headers=["Rank", "Model", "AA Intelligence"],
         rows=rows,
         alignments=["right", "left", "center"],
     )
 
 
-def _compute_findings(matched: list[AAModel]) -> list[str]:
+def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list[str]:
     findings: list[str] = []
 
     if not matched:
         return ["No matching models found in AA data."]
+
+    sorted_all = sorted(all_models, key=lambda m: m.intelligence_index or 0, reverse=True)
+    total = len(sorted_all)
 
     orgs: dict[str, list[AAModel]] = {}
     for m in matched:
         orgs.setdefault(m.organization, []).append(m)
 
     for org, models in orgs.items():
-        best = max(models, key=lambda m: m.intelligence_index)
+        best = max(models, key=lambda m: m.intelligence_index or 0)
+        rank = next((i + 1 for i, m in enumerate(sorted_all) if m.name == best.name), None)
+        rank_str = f", ~rank {rank} of {total}" if rank else ""
+        reasoning_models = [m for m in models if m.reasoning]
+        non_reasoning_models = [m for m in models if not m.reasoning]
+        parts = []
+        if reasoning_models:
+            parts.append(f"{len(reasoning_models)} reasoning")
+        if non_reasoning_models:
+            parts.append(f"{len(non_reasoning_models)} non-reasoning")
+        variant_str = f" ({', '.join(parts)})" if parts else ""
         findings.append(
-            f"**{org} top model:** {best.name} (Intelligence Index: {best.intelligence_index})"
+            f"**{org}:** Top model is {best.name} "
+            f"(Intelligence Index: {best.intelligence_index}{rank_str}). "
+            f"{len(models)} model(s) evaluated{variant_str}."
         )
 
     if len(orgs) >= 2:
         org_list = list(orgs.values())
-        a_best = max(org_list[0], key=lambda m: m.intelligence_index)
-        b_best = max(org_list[1], key=lambda m: m.intelligence_index)
+        a_best = max(org_list[0], key=lambda m: m.intelligence_index or 0)
+        b_best = max(org_list[1], key=lambda m: m.intelligence_index or 0)
+
+        a_score = a_best.intelligence_index or 0
+        b_score = b_best.intelligence_index or 0
+        if a_score != b_score:
+            higher = a_best if a_score > b_score else b_best
+            lower = b_best if higher == a_best else a_best
+            gap = (higher.intelligence_index or 0) - (lower.intelligence_index or 0)
+            findings.append(
+                f"**Intelligence:** {higher.name} scores {higher.intelligence_index} vs "
+                f"{lower.name} at {lower.intelligence_index} (gap of {gap} points). "
+                f"For context, the top model in AA is {sorted_all[0].name} "
+                f"at {sorted_all[0].intelligence_index}."
+            )
 
         if a_best.speed_tps is not None and b_best.speed_tps is not None:
             faster = a_best if a_best.speed_tps > b_best.speed_tps else b_best
             slower = b_best if faster == a_best else a_best
             assert faster.speed_tps is not None and slower.speed_tps is not None
             ratio = faster.speed_tps / slower.speed_tps
+            explanation = ""
+            if (
+                faster.params_active_b
+                and slower.params_active_b
+                and faster.params_active_b < slower.params_active_b
+            ):
+                explanation = (
+                    f" This is likely due to {faster.name}'s smaller active parameter "
+                    f"count ({faster.params_active_b:g}B active vs "
+                    f"{slower.params_active_b:g}B active)."
+                )
             findings.append(
                 f"**Speed:** {faster.name} is {ratio:.1f}x faster "
-                f"({faster.speed_tps:.0f} vs {slower.speed_tps:.0f} t/s)"
-            )
-
-        if a_best.blended_price is not None and b_best.blended_price is not None:
-            cheaper = a_best if a_best.blended_price < b_best.blended_price else b_best
-            pricier = b_best if cheaper == a_best else a_best
-            assert pricier.blended_price is not None and cheaper.blended_price is not None
-            ratio = pricier.blended_price / cheaper.blended_price
-            findings.append(
-                f"**Price:** {cheaper.name} is {ratio:.1f}x cheaper "
-                f"(${cheaper.blended_price:.2f} vs ${pricier.blended_price:.2f}/1M tokens)"
+                f"({faster.speed_tps:.0f} vs {slower.speed_tps:.0f} t/s).{explanation}"
             )
 
         if a_best.ttft_s is not None and b_best.ttft_s is not None:
@@ -265,7 +315,45 @@ def _compute_findings(matched: list[AAModel]) -> list[str]:
             ratio = slower_ttft.ttft_s / faster_ttft.ttft_s
             findings.append(
                 f"**Latency:** {faster_ttft.name} has {ratio:.1f}x lower TTFT "
-                f"({faster_ttft.ttft_s:.2f}s vs {slower_ttft.ttft_s:.2f}s)"
+                f"({faster_ttft.ttft_s:.2f}s vs {slower_ttft.ttft_s:.2f}s)."
+            )
+
+        if a_best.blended_price is not None and b_best.blended_price is not None:
+            cheaper = a_best if a_best.blended_price < b_best.blended_price else b_best
+            pricier = b_best if cheaper == a_best else a_best
+            assert pricier.blended_price is not None and cheaper.blended_price is not None
+            ratio = pricier.blended_price / cheaper.blended_price
+            findings.append(
+                f"**Price:** {cheaper.name} is {ratio:.1f}x cheaper "
+                f"(${cheaper.blended_price:.2f} vs ${pricier.blended_price:.2f}/1M blended tokens)."
+            )
+
+        a_ctx = a_best.context_window
+        b_ctx = b_best.context_window
+        if a_ctx and b_ctx and a_ctx != b_ctx:
+            larger = a_best if a_ctx > b_ctx else b_best
+            smaller = b_best if larger == a_best else a_best
+            assert larger.context_window is not None and smaller.context_window is not None
+            findings.append(
+                f"**Context window:** {larger.name} offers {larger.context_window // 1000}k "
+                f"tokens vs {smaller.context_window // 1000}k for {smaller.name}."
+            )
+
+        if (
+            a_best.params_total_b
+            and b_best.params_total_b
+            and a_best.params_active_b
+            and b_best.params_active_b
+            and (
+                a_best.params_active_b != a_best.params_total_b
+                or b_best.params_active_b != b_best.params_total_b
+            )
+        ):
+            findings.append(
+                f"**Parameter efficiency:** {a_best.name} has "
+                f"{a_best.params_total_b:g}B total / {a_best.params_active_b:g}B active; "
+                f"{b_best.name} has {b_best.params_total_b:g}B total / "
+                f"{b_best.params_active_b:g}B active."
             )
 
     return findings
@@ -310,10 +398,10 @@ class ArtificialAnalysisSource:
         for m in matched:
             orgs.setdefault(m.organization, []).append(m)
 
-        global_rankings: list[ComparisonTable] = []
-        for org_models in orgs.values():
-            best = max(org_models, key=lambda m: m.intelligence_index)
-            global_rankings.append(_global_ranking_table(all_models, best.name))
+        best_per_org = [
+            max(org_models, key=lambda m: m.intelligence_index or 0) for org_models in orgs.values()
+        ]
+        global_rankings = [_consolidated_ranking_table(all_models, best_per_org)]
 
         comparison_tables: list[ComparisonTable] = []
 
@@ -330,7 +418,7 @@ class ArtificialAnalysisSource:
                 _comparison_table(matched, title="All Models", include_params=False)
             )
 
-        findings = _compute_findings(matched)
+        findings = _compute_findings(matched, all_models)
 
         return SourceData(
             source_name=self.name,

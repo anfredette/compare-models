@@ -34,13 +34,9 @@
 ---
 {% if source.global_rankings %}
 
-## Global Rankings
-{% for gt in source.global_rankings %}
+## {{ source.global_rankings[0].title }}
 
-### {{ gt.title }}
-
-{{ render_table(gt) }}
-{% endfor %}
+{{ render_table(source.global_rankings[0]) }}
 
 ---
 {% endif %}

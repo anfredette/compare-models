@@ -103,43 +103,73 @@ def _find_models(df: pd.DataFrame, model_names: list[str]) -> tuple[list[str], l
     return found, not_found
 
 
-def _global_ranking_table(df: pd.DataFrame, model_name: str, window: int = 5) -> ComparisonTable:
+def _consolidated_ranking_table(
+    df: pd.DataFrame, model_names: list[str], window: int = 5
+) -> ComparisonTable:
     overall = (
         df[df["category"] == "overall"]
         .sort_values("rating", ascending=False)
         .reset_index(drop=True)
     )
     total = len(overall)
+    name_set = set(model_names)
 
-    idx = overall[overall["model_name"] == model_name].index
-    if len(idx) == 0:
+    positions: list[int] = []
+    for name in model_names:
+        idx = overall[overall["model_name"] == name].index
+        if len(idx) > 0:
+            positions.append(idx[0])
+
+    if not positions:
         return ComparisonTable(
-            title=f"{model_name} (not found in Arena)",
+            title="Global Arena Rankings (no models found)",
             headers=[],
             rows=[],
         )
 
-    pos = idx[0]
-    rank = pos + 1
-    start = max(0, pos - window)
-    end = min(total, pos + window + 1)
-    neighborhood = overall.iloc[start:end]
+    ranges: list[tuple[int, int]] = []
+    for pos in sorted(positions):
+        start = max(0, pos - window)
+        end = min(total - 1, pos + window)
+        ranges.append((start, end))
+
+    merged: list[tuple[int, int]] = [ranges[0]]
+    for start, end in ranges[1:]:
+        prev_start, prev_end = merged[-1]
+        if start - prev_end <= 10:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
 
     rows: list[list[str]] = []
-    for i, row in neighborhood.iterrows():
-        r = int(i) + 1  # type: ignore[call-overload]
-        name = row["model_name"]
-        is_target = name == model_name
-        fmt_rank = f"**{r}**" if is_target else str(r)
-        fmt_name = f"**{name}**" if is_target else name
-        fmt_rating = f"**{row['rating']:.1f}**" if is_target else f"{row['rating']:.1f}"
-        fmt_votes = (
-            f"**{int(row['vote_count']):,}**" if is_target else f"{int(row['vote_count']):,}"
-        )
-        rows.append([fmt_rank, fmt_name, fmt_rating, fmt_votes])
+    for seg_idx, (seg_start, seg_end) in enumerate(merged):
+        if seg_idx > 0:
+            prev_end = merged[seg_idx - 1][1]
+            gap = seg_start - prev_end - 1
+            rows.append(["", f"*[{gap} models not shown]*", "", ""])
+
+        for i in range(seg_start, seg_end + 1):
+            row = overall.iloc[i]
+            r = i + 1
+            name = row["model_name"]
+            is_target = name in name_set
+            fmt_rank = f"**{r}**" if is_target else str(r)
+            fmt_name = f"**{name}**" if is_target else name
+            fmt_rating = f"**{row['rating']:.1f}**" if is_target else f"{row['rating']:.1f}"
+            fmt_votes = (
+                f"**{int(row['vote_count']):,}**" if is_target else f"{int(row['vote_count']):,}"
+            )
+            rows.append([fmt_rank, fmt_name, fmt_rating, fmt_votes])
+
+    ranked_names = []
+    for pos in sorted(positions):
+        name = overall.iloc[pos]["model_name"]
+        rank = pos + 1
+        ranked_names.append(f"{name} (rank {rank})")
+    title = f"Global Arena Rankings ({total} models total): {', '.join(ranked_names)}"
 
     return ComparisonTable(
-        title=f"{model_name} (rank {rank} of {total})",
+        title=title,
         headers=["Rank", "Model", "Rating", "Votes"],
         rows=rows,
         alignments=["right", "left", "right", "right"],
@@ -272,52 +302,198 @@ def _win_loss_table(h2hs: list[HeadToHead]) -> ComparisonTable:
 def _compute_findings(
     model_names: list[str],
     h2hs: list[HeadToHead],
-    global_tables: list[ComparisonTable],
+    df: pd.DataFrame,
 ) -> list[str]:
     findings: list[str] = []
 
-    for gt in global_tables:
-        findings.append(f"**Global ranking:** {gt.title}")
+    if not h2hs:
+        return findings
 
-    if h2hs:
-        total_cats = len(h2hs[0].dimensions)
-        for h in h2hs:
-            if h.a_wins > h.b_wins:
-                findings.append(
-                    f"**{h.model_a} vs {h.model_b}:** Wins {h.a_wins} of {total_cats} categories"
+    overall = (
+        df[df["category"] == "overall"]
+        .sort_values("rating", ascending=False)
+        .reset_index(drop=True)
+    )
+    total = len(overall)
+
+    orgs: dict[str, list[str]] = {}
+    for name in model_names:
+        row = overall[overall["model_name"] == name]
+        if not row.empty:
+            org = row.iloc[0].get("organization", "unknown")
+            orgs.setdefault(org, []).append(name)
+
+    org_names = list(orgs.keys())
+    if len(org_names) >= 2:
+        primary_org, secondary_org = org_names[0], org_names[1]
+        primary_models = orgs[primary_org]
+        secondary_models = orgs[secondary_org]
+    else:
+        primary_org = org_names[0] if org_names else "Unknown"
+        primary_models = model_names
+        secondary_org = ""
+        secondary_models = []
+
+    rankings: dict[str, tuple[int, float]] = {}
+    for name in model_names:
+        idx = overall[overall["model_name"] == name].index
+        if len(idx) > 0:
+            pos = idx[0]
+            rating = overall.iloc[pos]["rating"]
+            rankings[name] = (pos + 1, float(rating))
+
+    if rankings:
+        primary_ranked = [(n, rankings[n]) for n in primary_models if n in rankings]
+        secondary_ranked = [(n, rankings[n]) for n in secondary_models if n in rankings]
+
+        if primary_ranked and secondary_ranked:
+            best_primary = min(primary_ranked, key=lambda x: x[1][0])
+            best_secondary = min(secondary_ranked, key=lambda x: x[1][0])
+
+            findings.append(
+                f"**Overall positioning:** The top {primary_org} model in Arena is "
+                f"`{best_primary[0]}` (rank {best_primary[1][0]}, rating {best_primary[1][1]:.1f}). "
+                f"The top {secondary_org} model is `{best_secondary[0]}` "
+                f"(rank {best_secondary[1][0]}, rating {best_secondary[1][1]:.1f}), "
+                f"out of {total} total models."
+            )
+
+            if len(secondary_ranked) > 1:
+                closest = min(
+                    secondary_ranked,
+                    key=lambda x: abs(x[1][1] - best_primary[1][1]),
                 )
-            elif h.b_wins > h.a_wins:
-                findings.append(
-                    f"**{h.model_a} vs {h.model_b}:** Loses {h.b_wins} of {total_cats} categories"
-                )
-            else:
-                findings.append(f"**{h.model_a} vs {h.model_b}:** Tied at {h.a_wins}-{h.b_wins}")
+                if closest[0] != best_secondary[0]:
+                    findings[-1] += (
+                        f" The closest {secondary_org} model by rating is "
+                        f"`{closest[0]}` (rank {closest[1][0]}, rating {closest[1][1]:.1f})."
+                    )
 
-        all_dims: dict[str, list[float]] = {}
-        for h in h2hs:
-            for dim, delta in zip(h.dimensions, h.deltas, strict=True):
-                all_dims.setdefault(dim, []).append(delta)
+    total_cats = len(h2hs[0].dimensions)
+    h2h_summary_parts: list[str] = []
+    for h in h2hs:
+        if h.a_wins > h.b_wins:
+            h2h_summary_parts.append(
+                f"`{h.model_a}` wins {h.a_wins} of {total_cats} categories vs `{h.model_b}`"
+            )
+        elif h.b_wins > h.a_wins:
+            h2h_summary_parts.append(
+                f"`{h.model_a}` loses {h.b_wins} of {total_cats} categories vs `{h.model_b}`"
+            )
+        else:
+            h2h_summary_parts.append(f"`{h.model_a}` ties `{h.model_b}` at {h.a_wins}-{h.b_wins}")
+    findings.append("**Head-to-head summary:** " + ". ".join(h2h_summary_parts) + ".")
 
-        strengths = [
-            (dim, sum(ds) / len(ds))
+    all_dims: dict[str, list[float]] = {}
+    for h in h2hs:
+        for dim, delta in zip(h.dimensions, h.deltas, strict=True):
+            all_dims.setdefault(dim, []).append(delta)
+
+    strengths = sorted(
+        [
+            (dim, sum(ds) / len(ds), max(ds), min(ds))
             for dim, ds in all_dims.items()
             if all(d > 0 for d in ds) and dim != "overall"
-        ]
-        weaknesses = [
-            (dim, sum(ds) / len(ds))
+        ],
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    weaknesses = sorted(
+        [
+            (dim, sum(ds) / len(ds), max(ds), min(ds))
             for dim, ds in all_dims.items()
             if all(d < 0 for d in ds) and dim != "overall"
-        ]
+        ],
+        key=lambda x: x[1],
+    )
 
-        if strengths:
-            strengths.sort(key=lambda x: x[1], reverse=True)
-            top = [f"{s[0]} (avg +{s[1]:.1f})" for s in strengths[:3]]
-            findings.append(f"**Consistent strengths:** {', '.join(top)}")
+    if strengths:
+        primary_label = f"{primary_org}'s" if primary_org else "Primary"
+        details = []
+        for dim, avg, peak, _ in strengths:
+            representative_h2h = next(
+                (
+                    h
+                    for h in h2hs
+                    if dim in h.dimensions and h.deltas[h.dimensions.index(dim)] == peak
+                ),
+                h2hs[0],
+            )
+            details.append(
+                f"{dim} (+{avg:.1f} avg, up to +{peak:.1f} vs `{representative_h2h.model_b}`)"
+            )
+        findings.append(
+            f"**{primary_label} strengths** (wins in every matchup): " + ", ".join(details)
+        )
 
-        if weaknesses:
-            weaknesses.sort(key=lambda x: x[1])
-            bottom = [f"{w[0]} (avg {w[1]:.1f})" for w in weaknesses[:3]]
-            findings.append(f"**Consistent weaknesses:** {', '.join(bottom)}")
+    if weaknesses:
+        primary_label = f"{primary_org}'s" if primary_org else "Primary"
+        details = []
+        for dim, avg, _, trough in weaknesses:
+            representative_h2h = next(
+                (
+                    h
+                    for h in h2hs
+                    if dim in h.dimensions and h.deltas[h.dimensions.index(dim)] == trough
+                ),
+                h2hs[0],
+            )
+            details.append(
+                f"{dim} ({avg:.1f} avg, as low as {trough:.1f} vs `{representative_h2h.model_b}`)"
+            )
+        findings.append(
+            f"**{primary_label} weaknesses** (loses in every matchup): " + ", ".join(details)
+        )
+
+    stem_cats = {"math", "coding", "ind_math", "sw/it", "science"}
+    humanities_cats = {"creative", "legal", "writing", "instruct", "expert"}
+    stem_deltas = [
+        avg for dim, ds in all_dims.items() if dim in stem_cats for avg in [sum(ds) / len(ds)]
+    ]
+    humanities_deltas = [
+        avg for dim, ds in all_dims.items() if dim in humanities_cats for avg in [sum(ds) / len(ds)]
+    ]
+
+    if stem_deltas and humanities_deltas:
+        stem_avg = sum(stem_deltas) / len(stem_deltas)
+        hum_avg = sum(humanities_deltas) / len(humanities_deltas)
+        if abs(stem_avg - hum_avg) > 5:
+            primary_label = primary_org if primary_org else "Primary model"
+            secondary_label = secondary_org if secondary_org else "opponent"
+            if hum_avg > stem_avg:
+                findings.append(
+                    f"**Profile difference:** {primary_label} has a "
+                    f"humanities-leaning profile (avg delta +{hum_avg:.1f} in "
+                    f"creative/legal/writing/instruct/expert vs {stem_avg:+.1f} in "
+                    f"STEM categories). {secondary_label} models generally skew "
+                    f"toward STEM."
+                )
+            else:
+                findings.append(
+                    f"**Profile difference:** {primary_label} has a "
+                    f"STEM-leaning profile (avg delta +{stem_avg:.1f} in "
+                    f"STEM categories vs {hum_avg:+.1f} in humanities). "
+                    f"{secondary_label} models lean toward humanities/creative."
+                )
+
+    tier_shifts: list[str] = []
+    for h in sorted(h2hs, key=lambda h: h.b_wins):
+        overall_delta = next(
+            (d for dim, d in zip(h.dimensions, h.deltas, strict=False) if dim == "overall"),
+            0.0,
+        )
+        if h.a_wins >= total_cats - 2:
+            tier_shifts.append(
+                f"dominates `{h.model_b}` ({h.a_wins}/{total_cats}, overall {overall_delta:+.1f})"
+            )
+        elif h.b_wins >= total_cats - 2:
+            tier_shifts.append(
+                f"is dominated by `{h.model_b}` ({h.b_wins}/{total_cats} losses, "
+                f"overall {overall_delta:+.1f})"
+            )
+    if tier_shifts:
+        primary_label = f"`{h2hs[0].model_a}`"
+        findings.append(f"**Cross-tier pattern:** {primary_label} " + "; ".join(tier_shifts) + ".")
 
     return findings
 
@@ -389,7 +565,7 @@ class ArenaSource:
                 findings=["No matching models found in Arena leaderboard."],
             )
 
-        global_rankings = [_global_ranking_table(df, m) for m in found]
+        global_rankings = [_consolidated_ranking_table(df, found)]
         subset = _subset_ranking(df, found)
 
         general = _category_table(df, found, GENERAL_CATEGORIES)
@@ -402,7 +578,7 @@ class ArenaSource:
 
         win_loss = _win_loss_table(h2hs) if h2hs else None
 
-        findings = _compute_findings(found, h2hs, global_rankings)
+        findings = _compute_findings(found, h2hs, df)
 
         comparison_tables = [subset, general, industry]
         if win_loss:

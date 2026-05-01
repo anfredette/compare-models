@@ -9,7 +9,7 @@ from compare_models.sources.artificial_analysis import (
     AAModel,
     _comparison_table,
     _compute_findings,
-    _global_ranking_table,
+    _consolidated_ranking_table,
     _load_models,
     _match_models,
 )
@@ -125,21 +125,24 @@ class TestComparisonTable:
 
 @pytest.mark.unit
 class TestGlobalRanking:
-    def test_returns_neighborhood(self, sample_aa_models: list[AAModel]) -> None:
-        table = _global_ranking_table(sample_aa_models, "Beta Large", window=2)
-        assert "Beta Large" in table.title
+    def test_returns_consolidated_table(self, sample_aa_models: list[AAModel]) -> None:
+        targets = [m for m in sample_aa_models if m.name == "Beta Large"]
+        table = _consolidated_ranking_table(sample_aa_models, targets, window=2)
+        assert "Global AA Rankings" in table.title
+        names = [row[1] for row in table.rows]
+        assert any("Beta Large" in n for n in names)
 
-    def test_not_found(self, sample_aa_models: list[AAModel]) -> None:
-        table = _global_ranking_table(sample_aa_models, "Nonexistent")
-        assert "not found" in table.title
+    def test_no_models_found(self, sample_aa_models: list[AAModel]) -> None:
+        table = _consolidated_ranking_table(sample_aa_models, [], window=2)
+        assert "no models found" in table.title
 
 
 @pytest.mark.unit
 class TestFindings:
     def test_produces_findings(self, sample_aa_models: list[AAModel]) -> None:
-        findings = _compute_findings(sample_aa_models)
+        findings = _compute_findings(sample_aa_models, sample_aa_models)
         assert len(findings) > 0
 
     def test_empty_input(self) -> None:
-        findings = _compute_findings([])
+        findings = _compute_findings([], [])
         assert findings == ["No matching models found in AA data."]

@@ -10,57 +10,75 @@ When the user asks to compare models:
    - For model families: `uv run compare-models compare -m "family1,family2" --families`
    - For specific sources only: add `--sources arena` or `--sources artificial_analysis`
    - The CLI auto-generates a report name in `reports/` (e.g., `reports/claude_gpt_2025_05_01_00.md`). Use `-o path` only to override.
-   - To also generate a PDF: add `--pdf` (requires pandoc and a LaTeX engine)
+   - Do NOT add `--pdf` yet — generate the PDF after adding analysis (see step 7)
+   - Do NOT add `--check-api` on the first run — only use it if the user opts in (see step 4)
 3. Run the command from the compare-models project directory (`/Users/anfredet/go/src/github.com/compare-models/`)
-4. Read the generated report file (parse the path from the CLI's "Comparison written to ..." output)
-5. **Enhance the Key Findings sections with interpretive prose:**
-   - Read the Arena Key Findings and AA Key Findings sections in the generated file
-   - Rewrite each finding in-place with narrative interpretation, adding:
-     - Context about what the numbers mean practically (e.g., "this places it alongside models like X and Y")
-     - Relative tier placement and what it implies
-     - Implications for deployment decisions (e.g., "well-suited for latency-sensitive applications")
-     - Caveats and limitations worth noting
-   - Keep the same numbered-list format but with richer, more readable prose
-   - Example: transform `**Speed:** X is 2.5x faster (132 vs 52 t/s).` into `**Speed advantage:** X is dramatically faster than comparable Y models: 132 t/s vs 52-55 t/s for the Y 235B variants. This is likely due to X's much smaller active parameter count (13B active vs 22B active) despite having more total parameters.`
-6. **Write an Overall Conclusions section and insert it after the intro/section table (before Part 1).** The template reserves this position. Structure it as:
-     1. **Overall positioning** — Where each model/family sits (frontier vs mid-tier vs budget) with specific rank and score evidence from both Arena and AA
-     2. **Lineup depth** — How broad each family's lineup is (number of models on each platform)
-     3. **Value proposition** — Each side's niche: speed/cost vs quality vs breadth, with specific numbers
-     4. **Quality profile differences** — STEM-leaning vs humanities-leaning, citing specific category deltas from head-to-head data
-     5. **Evaluation coverage** — Note any limitations (different variants evaluated on different platforms, missing data)
-     6. **Summary table** — A markdown table comparing key factors side by side:
+4. **If models are not found:** Check the CLI output for suggestion lines and not-found counts.
+   - The CLI prints `Model "xyz" not found. Similar models: a, b, c` for each not-found model with fuzzy matches.
+   - **Present suggestions to the user:** "Model 'xyz' wasn't found. Did you mean one of: a, b, c?"
+   - Wait for the user's response, then re-run the CLI with the corrected model names.
+   - **If no good fuzzy matches exist** (or the user says none of those), ask: "Want me to check the AA API for this model? (This uses the AA API budget.)"
+   - If the user says yes, re-run with `--check-api` to query the live AA API for the missing models.
+   - If `--check-api` finds models, the CLI output will note them as "found via live API but missing from cache." After the report is complete, suggest: "Some models were found via the live API but aren't in your local cache. Run `uv run compare-models sync-aa` to update."
+   - If AA reports 0 models total (empty cache), suggest running `uv run compare-models sync-aa` first.
+5. Read the generated report file (parse the path from the CLI's "Comparison written to ..." output)
+6. **Enhance the report with analysis** (do not ask for permission — this is what the user is requesting by invoking /compare-models):
 
-        | Factor | Model A | Model B |
-        |--------|---------|---------|
-        | Top-tier quality | ... | ... |
-        | Same-tier quality | ... | ... |
-        | Speed | ... | ... |
-        | Latency | ... | ... |
-        | Price | ... | ... |
-        | Context window | ... | ... |
-        | Strength categories | ... | ... |
-        | Weakness categories | ... | ... |
-        | Model variety | ... | ... |
-        | Open weights | ... | ... |
+   a. **Enhance the Key Findings sections with interpretive prose:**
+      - Read the Arena Key Findings and AA Key Findings sections in the generated file
+      - Rewrite each finding in-place with narrative interpretation, adding:
+        - Context about what the numbers mean practically (e.g., "this places it alongside models like X and Y")
+        - Relative tier placement and what it implies
+        - Implications for deployment decisions (e.g., "well-suited for latency-sensitive applications")
+        - Caveats and limitations worth noting
+      - Keep the same numbered-list format but with richer, more readable prose
+      - Example: transform `**Speed:** X is 2.5x faster (132 vs 52 t/s).` into `**Speed advantage:** X is dramatically faster than comparable Y models: 132 t/s vs 52-55 t/s for the Y 235B variants. This is likely due to X's much smaller active parameter count (13B active vs 22B active) despite having more total parameters.`
 
-     7. **Bottom line** — 2-3 sentence prose summary of when to pick each model family
-   - Write the conclusions using the actual data from the report — cite specific numbers, ranks, scores, and category names
-7. Summarize the key findings for the user
-8. Offer to explain specific sections in more detail
+   b. **Write an Overall Conclusions section and insert it after the intro/section table (before Part 1).** The template reserves this position. Structure it as:
+      1. **Overall positioning** — Where each model/family sits (frontier vs mid-tier vs budget) with specific rank and score evidence from both Arena and AA
+      2. **Lineup depth** — How broad each family's lineup is (number of models on each platform)
+      3. **Value proposition** — Each side's niche: speed/cost vs quality vs breadth, with specific numbers
+      4. **Quality profile differences** — STEM-leaning vs humanities-leaning, citing specific category deltas from head-to-head data
+      5. **Evaluation coverage** — Note any limitations (different variants evaluated on different platforms, missing data)
+      6. **Summary table** — A markdown table comparing key factors side by side:
 
-## Syncing Artificial Analysis Data
+         | Factor | Model A | Model B |
+         |--------|---------|---------|
+         | Top-tier quality | ... | ... |
+         | Same-tier quality | ... | ... |
+         | Speed | ... | ... |
+         | Latency | ... | ... |
+         | Price | ... | ... |
+         | Context window | ... | ... |
+         | Strength categories | ... | ... |
+         | Weakness categories | ... | ... |
+         | Model variety | ... | ... |
+         | Open weights | ... | ... |
 
-AA data is fetched from the AA API and cached locally. When a comparison reports
-"0 models found" from AA, the user likely needs to sync:
+      7. **Bottom line** — 2-3 sentence prose summary of when to pick each model family
+      - Write the conclusions using the actual data from the report — cite specific numbers, ranks, scores, and category names
+
+7. **Generate PDF if the user requested it** (do not ask for permission — just generate it):
+   - Run pandoc AFTER all analysis has been added to the markdown file
+   - `pandoc <report>.md -o <report>.pdf --pdf-engine=xelatex -V geometry:margin=1in -V fontsize=10pt`
+   - This ensures the PDF includes the enhanced findings and conclusions
+8. Summarize the key findings for the user
+9. Offer to explain specific sections in more detail
+
+## Data Caching
+
+Both sources cache data locally in `.model_cache/` inside the project directory. Caches auto-refresh:
+- **Empty cache**: auto-fetched on first run (AA requires `AA_API_KEY` in environment)
+- **Stale cache (>24 hours)**: auto-refreshed in the background; falls back to stale data if refresh fails
+- **Manual sync**: use `sync-aa` or `sync-arena` to force a refresh
 
 ```bash
-export AA_API_KEY=your_key
-uv run compare-models sync-aa
+uv run compare-models sync-aa       # Refresh AA data (requires AA_API_KEY)
+uv run compare-models sync-arena    # Refresh Arena data (no key needed)
 ```
 
-This fetches all models (~500+) in a single API call and caches them at
-`~/.cache/compare-models/aa_models.json`. The `--aa-data` flag on `compare`
-can override this with a custom JSON file.
+If AA auto-sync fails with an auth error, tell the user to check that `AA_API_KEY` is set correctly.
+The `--aa-data` flag on `compare` can override the AA cache with a custom JSON file.
 
 ## Usage Examples
 
@@ -68,9 +86,9 @@ can override this with a custom JSON file.
 - "How does Trinity stack up against Qwen models?" (use --families)
 - "Compare just Arena data for trinity and qwen" (use --sources arena)
 - "Sync the AA data" (run sync-aa)
+- "Sync the Arena data" (run sync-arena)
 
 ## Notes
 
-- Arena data requires network access (downloads from HuggingFace)
-- AA data comes from the local cache — sync with `compare-models sync-aa`
-- Model aliases are in `data/model_aliases.json`
+- Both data sources cache locally in `.model_cache/` and auto-refresh if older than 24 hours
+- Arena data is public (HuggingFace); AA data requires `AA_API_KEY`

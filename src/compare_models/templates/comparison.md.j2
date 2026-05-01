@@ -31,6 +31,9 @@
 {% if source.models_not_found %}
 
 > **Note:** The following models were not found in this source: {{ source.models_not_found | join(', ') }}
+{% for name, similar in source.suggestions.items() %}
+> - "{{ name }}" — did you mean: {{ similar | join(', ') }}?
+{% endfor %}
 {% endif %}
 
 ## About {{ source.source_name }}

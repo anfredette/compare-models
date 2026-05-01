@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 
 from compare_models import aa_client
 from compare_models.models import ComparisonTable, SourceData
+from compare_models.resolver import suggest_similar
 from compare_models.sources import register_source
 
 logger = logging.getLogger(__name__)
@@ -80,16 +82,44 @@ class AAModel(BaseModel):
 
 def _load_models(data_path: Path | None) -> list[AAModel]:
     if data_path is not None:
+        logger.info("Loading AA data from %s", data_path)
         with open(data_path) as f:
             raw = json.load(f)
     else:
         raw, fetched_at = aa_client.load_cache()
         if not raw:
-            raise RuntimeError(
-                "No AA data cache found. Run 'compare-models sync-aa' to fetch data."
-            )
-        age = aa_client.cache_age_display(fetched_at) if fetched_at else "unknown"
-        logger.info("Using cached AA data (synced %s)", age)
+            api_key = os.environ.get("AA_API_KEY")
+            if not api_key:
+                raise RuntimeError(
+                    "No AA cache found and AA_API_KEY is not set. "
+                    "Set AA_API_KEY in your environment for auto-sync, "
+                    "or run 'compare-models sync-aa --api-key <key>'."
+                )
+            logger.info("No AA cache found, fetching from API...")
+            try:
+                count, _ = aa_client.sync(api_key)
+                logger.info("Synced %d models from AA API", count)
+            except RuntimeError as e:
+                raise RuntimeError(f"AA auto-sync failed: {e}") from e
+            raw, fetched_at = aa_client.load_cache()
+        elif aa_client.is_cache_stale(fetched_at):
+            api_key = os.environ.get("AA_API_KEY")
+            if api_key:
+                logger.info("AA cache is stale, refreshing from API...")
+                try:
+                    count, _ = aa_client.sync(api_key)
+                    logger.info("Refreshed %d models from AA API", count)
+                    raw, fetched_at = aa_client.load_cache()
+                except Exception:
+                    logger.warning("AA auto-refresh failed, using stale cache")
+            else:
+                age = aa_client.cache_age_display(fetched_at) if fetched_at else "unknown"
+                logger.warning(
+                    "AA cache is stale (synced %s) but AA_API_KEY is not set — using stale data",
+                    age,
+                )
+        else:
+            logger.info("Using cached AA data (synced %s)", aa_client.cache_age_display(fetched_at))
     return [m for m in (AAModel(**entry) for entry in raw) if m.intelligence_index is not None]
 
 
@@ -104,10 +134,15 @@ def _match_models(
 ) -> tuple[list[AAModel], list[str]]:
     if families:
         matched: list[AAModel] = []
+        not_found_families: list[str] = []
         for name in names:
             norm = _normalize(name)
-            matched.extend(m for m in models if norm in _normalize(m.name))
-        return list({m.name: m for m in matched}.values()), []
+            family_matches = [m for m in models if norm in _normalize(m.name)]
+            if family_matches:
+                matched.extend(family_matches)
+            else:
+                not_found_families.append(name)
+        return list({m.name: m for m in matched}.values()), not_found_families
 
     found: list[AAModel] = []
     found_names: set[str] = set()
@@ -419,8 +454,9 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
 class ArtificialAnalysisSource:
     """Artificial Analysis data source."""
 
-    def __init__(self, data_path: Path | None = None):
+    def __init__(self, data_path: Path | None = None, check_api: bool = False):
         self._data_path = data_path
+        self._check_api = check_api
 
     @property
     def name(self) -> str:
@@ -437,12 +473,39 @@ class ArtificialAnalysisSource:
         families: bool = False,
         **kwargs: Any,
     ) -> SourceData:
-        if self._data_path:
-            logger.info("Loading AA data from %s", self._data_path)
-        else:
-            logger.info("Loading AA data from cache")
         all_models = _load_models(self._data_path)
         matched, not_found = _match_models(all_models, model_names, families=families)
+
+        api_found_names: list[str] = []
+        if not_found and self._check_api and not self._data_path:
+            api_key = os.environ.get("AA_API_KEY")
+            if api_key:
+                logger.info("Checking AA API for %d model(s) not in cache...", len(not_found))
+                try:
+                    raw = aa_client.fetch_from_api(api_key)
+                    api_models = [
+                        AAModel(**aa_client._map_api_model(m))
+                        for m in raw
+                        if aa_client._map_api_model(m).get("intelligence_index") is not None
+                    ]
+                    api_matched, still_not_found = _match_models(
+                        api_models, not_found, families=families
+                    )
+                    if api_matched:
+                        api_found_names = [m.name for m in api_matched]
+                        matched.extend(api_matched)
+                        all_models.extend(api_models)
+                    not_found = still_not_found
+                except Exception:
+                    logger.warning("AA API check failed, continuing with cache data")
+
+        suggestions: dict[str, list[str]] = {}
+        if not_found:
+            available = [m.name for m in all_models]
+            for name in not_found:
+                matches = suggest_similar(name, available)
+                if matches:
+                    suggestions[name] = matches
 
         if not matched:
             return SourceData(
@@ -451,6 +514,7 @@ class ArtificialAnalysisSource:
                 methodology=METHODOLOGY,
                 models_found=[],
                 models_not_found=not_found,
+                suggestions=suggestions,
                 findings=["No matching models found in AA data."],
             )
 
@@ -480,6 +544,13 @@ class ArtificialAnalysisSource:
 
         findings = _compute_findings(matched, all_models)
 
+        if api_found_names:
+            findings.append(
+                f"**Note:** {len(api_found_names)} model(s) found via live API but missing "
+                f"from cache ({', '.join(api_found_names)}). "
+                f"Run `compare-models sync-aa` to update your local cache."
+            )
+
         return SourceData(
             source_name=self.name,
             source_description=self.description,
@@ -489,6 +560,7 @@ class ArtificialAnalysisSource:
             findings=findings,
             models_found=[m.name for m in matched],
             models_not_found=not_found,
+            suggestions=suggestions,
         )
 
 

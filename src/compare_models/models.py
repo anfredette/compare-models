@@ -51,6 +51,7 @@ class SourceData:
     findings: list[str] = field(default_factory=list)
     models_found: list[str] = field(default_factory=list)
     models_not_found: list[str] = field(default_factory=list)
+    suggestions: dict[str, list[str]] = field(default_factory=dict)
 
 
 @dataclass

@@ -4,9 +4,11 @@ import logging
 from typing import Any
 
 import pandas as pd
-from datasets import load_dataset
 
+from compare_models import arena_client
+from compare_models.aa_client import cache_age_display, is_cache_stale
 from compare_models.models import ComparisonTable, HeadToHead, SourceData
+from compare_models.resolver import suggest_similar
 from compare_models.sources import register_source
 
 logger = logging.getLogger(__name__)
@@ -81,18 +83,39 @@ def _short_cat(cat: str) -> str:
 
 
 def _fetch_arena() -> pd.DataFrame:
-    ds = load_dataset("lmarena-ai/leaderboard-dataset", "text_style_control", split="latest")
-    return pd.DataFrame(ds)
+    rows, fetched_at = arena_client.load_cache()
+    if not rows:
+        logger.info("No Arena cache found, fetching from HuggingFace...")
+        count, _ = arena_client.sync()
+        logger.info("Synced %d rows from Arena", count)
+        rows, fetched_at = arena_client.load_cache()
+    elif is_cache_stale(fetched_at):
+        logger.info("Arena cache is stale, refreshing from HuggingFace...")
+        try:
+            count, _ = arena_client.sync()
+            logger.info("Refreshed %d rows from Arena", count)
+            rows, fetched_at = arena_client.load_cache()
+        except Exception:
+            logger.warning("Arena auto-refresh failed, using stale cache")
+    else:
+        logger.info("Using cached Arena data (synced %s)", cache_age_display(fetched_at))
+    return pd.DataFrame(rows)
 
 
-def _resolve_family_models(df: pd.DataFrame, family_names: list[str]) -> list[str]:
+def _resolve_family_models(
+    df: pd.DataFrame, family_names: list[str]
+) -> tuple[list[str], list[str]]:
     overall = df[df["category"] == "overall"]
     matched: list[str] = []
+    not_found: list[str] = []
     for family in family_names:
         family_lower = family.lower()
         matches = overall[overall["model_name"].str.lower().str.contains(family_lower)]
-        matched.extend(matches["model_name"].tolist())
-    return sorted(set(matched))
+        if not matches.empty:
+            matched.extend(matches["model_name"].tolist())
+        else:
+            not_found.append(family)
+    return sorted(set(matched)), not_found
 
 
 def _find_models(df: pd.DataFrame, model_names: list[str]) -> tuple[list[str], list[str]]:
@@ -585,14 +608,24 @@ class ArenaSource:
         families: bool = False,
         **kwargs: Any,
     ) -> SourceData:
-        logger.info("Fetching Arena leaderboard data...")
         df = _fetch_arena()
 
+        family_not_found: list[str] = []
         if families:
-            model_names = _resolve_family_models(df, model_names)
+            model_names, family_not_found = _resolve_family_models(df, model_names)
             logger.info(f"Resolved {len(model_names)} models from family names")
 
         found, not_found = _find_models(df, model_names)
+        not_found.extend(family_not_found)
+
+        suggestions: dict[str, list[str]] = {}
+        if not_found:
+            overall = df[df["category"] == "overall"]
+            available = overall["model_name"].tolist()
+            for name in not_found:
+                matches = suggest_similar(name, available)
+                if matches:
+                    suggestions[name] = matches
 
         if not found:
             return SourceData(
@@ -601,6 +634,7 @@ class ArenaSource:
                 methodology=METHODOLOGY,
                 models_found=[],
                 models_not_found=not_found,
+                suggestions=suggestions,
                 findings=["No matching models found in Arena leaderboard."],
             )
 
@@ -633,6 +667,7 @@ class ArenaSource:
             findings=findings,
             models_found=found,
             models_not_found=not_found,
+            suggestions=suggestions,
         )
 
 

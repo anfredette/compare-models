@@ -8,6 +8,7 @@ from compare_models.aa_client import (
     _infer_reasoning,
     _map_api_model,
     cache_age_display,
+    is_cache_stale,
     load_cache,
     save_cache,
 )
@@ -88,7 +89,9 @@ class TestInferReasoning:
 @pytest.mark.unit
 class TestCacheRoundTrip:
     def test_save_and_load(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("COMPARE_MODELS_CACHE_DIR", str(tmp_path))
+        import compare_models.aa_client as mod
+
+        monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
         models = [
             {"name": "Test", "slug": "test", "organization": "Org", "intelligence_index": 30}
         ]
@@ -101,14 +104,20 @@ class TestCacheRoundTrip:
         assert fetched_at is not None
 
     def test_load_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("COMPARE_MODELS_CACHE_DIR", str(tmp_path))
+        import compare_models.aa_client as mod
+
+        monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
         loaded, fetched_at = load_cache()
         assert loaded == []
         assert fetched_at is None
 
     def test_load_corrupt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("COMPARE_MODELS_CACHE_DIR", str(tmp_path))
-        cache_file = tmp_path / "aa_models.json"
+        import compare_models.aa_client as mod
+
+        monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
+        cache_dir = tmp_path / ".model_cache"
+        cache_dir.mkdir()
+        cache_file = cache_dir / "aa_models.json"
         cache_file.write_text("not json{{{")
         loaded, fetched_at = load_cache()
         assert loaded == []
@@ -137,3 +146,24 @@ class TestCacheAgeDisplay:
 
         three_days_ago = (datetime.now(UTC) - timedelta(days=3)).isoformat()
         assert cache_age_display(three_days_ago) == "3 days ago"
+
+
+@pytest.mark.unit
+class TestIsCacheStale:
+    def test_none_is_stale(self) -> None:
+        assert is_cache_stale(None) is True
+
+    def test_recent_is_fresh(self) -> None:
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC).isoformat()
+        assert is_cache_stale(now) is False
+
+    def test_old_is_stale(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        old = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+        assert is_cache_stale(old) is True
+
+    def test_invalid_is_stale(self) -> None:
+        assert is_cache_stale("not-a-date") is True

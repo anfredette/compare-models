@@ -23,11 +23,11 @@ REASONING_PATTERNS = re.compile(
 )
 
 
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+
 def get_cache_dir() -> Path:
-    override = os.environ.get("COMPARE_MODELS_CACHE_DIR")
-    if override:
-        return Path(override)
-    return Path.home() / ".cache" / "compare-models"
+    return _PROJECT_ROOT / ".model_cache"
 
 
 def get_cache_path() -> Path:
@@ -166,6 +166,20 @@ def cache_age_display(fetched_at: str) -> str:
         return f"{hours} hour{'s' if hours != 1 else ''} ago"
     days = total_seconds // 86400
     return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+def is_cache_stale(fetched_at: str | None, max_age_hours: int = 24) -> bool:
+    """Return True if fetched_at is None or older than max_age_hours."""
+    if fetched_at is None:
+        return True
+    try:
+        fetched = datetime.fromisoformat(fetched_at)
+    except ValueError:
+        return True
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=UTC)
+    age = datetime.now(UTC) - fetched
+    return age.total_seconds() > max_age_hours * 3600
 
 
 def sync(api_key: str) -> tuple[int, Path]:

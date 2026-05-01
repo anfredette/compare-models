@@ -1,6 +1,6 @@
 # compare-models
 
-Automated LLM model comparison tool that generates detailed reports from
+Automated LLM model evaluation tool that generates detailed reports from
 multiple evaluation sources. It pulls data from
 [Arena](https://lmarena.ai/) (human preference ratings) and
 [Artificial Analysis](https://artificialanalysis.ai/) (automated benchmarks,
@@ -8,9 +8,12 @@ speed, latency, and pricing), then produces a report with
 global rankings, category breakdowns, head-to-head comparisons, and key
 findings.
 
+Works for **single-model evaluation** (where does this model rank?) and
+**multi-model comparison** (how do these models or families stack up?).
+
 The tool works in two modes: a **CLI** that generates data-driven reports with
 deterministic findings, and a **Claude skill** (`/compare-models`) that runs
-the CLI and then layers on narrative analysis with an Overall Conclusions
+the CLI and then layers on narrative analysis with an Overall Assessment
 section.
 
 ## Installation
@@ -25,25 +28,29 @@ uv sync
 
 ## Setup
 
-### Artificial Analysis API Key
+### Data Sources
 
-To use Artificial Analysis data, you need a free API key from
-[artificialanalysis.ai](https://artificialanalysis.ai/). Set it as an
-environment variable:
+Both data sources cache locally in `.model_cache/` inside the project directory.
+Caches auto-refresh if older than 24 hours, and auto-fetch if empty on first run.
+
+**Arena** (no setup needed): Data is fetched from HuggingFace automatically.
+
+**Artificial Analysis**: Requires a free API key from
+[artificialanalysis.ai](https://artificialanalysis.ai/):
 
 ```bash
 export AA_API_KEY=your_api_key_here
 ```
 
-Then sync the model data:
+On first run, the AA cache will auto-populate. You can also sync manually:
 
 ```bash
-uv run compare-models sync-aa
+uv run compare-models sync-aa       # Refresh AA data (requires AA_API_KEY)
+uv run compare-models sync-arena    # Refresh Arena data (no key needed)
 ```
 
-This fetches all models from the AA API and caches them locally at
-`~/.cache/compare-models/aa_models.json`. Re-run `sync-aa` whenever you want
-to refresh the data.
+If AA auto-sync fails with an auth error, check that `AA_API_KEY` is set
+correctly.
 
 **Optional -- PDF output** requires [pandoc](https://pandoc.org/installing.html)
 and a LaTeX engine (pdflatex, xelatex, or lualatex):
@@ -66,9 +73,9 @@ sudo dnf install pandoc texlive-latex
 The best results come from running inside a
 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session. The
 `/compare-models` skill provides a natural language interface -- just describe
-what you want to compare and Claude handles the rest. It builds the right CLI
+what you want to evaluate and Claude handles the rest. It builds the right CLI
 command, reads the generated report, then enhances it with interpretive Key
-Findings and a full Overall Conclusions section covering positioning, value
+Findings and a full Overall Assessment section covering positioning, value
 proposition, quality profiles, and a side-by-side summary table.
 
 From the `compare-models` project directory:
@@ -81,22 +88,22 @@ claude
 Then use the skill:
 
 ```
+/compare-models Evaluate claude-opus-4-6
 /compare-models Compare Trinity vs Qwen model families
 /compare-models How does Gemini 3 stack up against Gemma 4?
 /compare-models Compare just Arena data for trinity and qwen, and generate a PDF
-/compare-models Add Claude Opus 4.7 to the AA data
 ```
 
 Claude will:
 1. Parse the natural language request and build the appropriate CLI command
 2. Run the CLI to generate data tables, head-to-head comparisons, and findings
 3. Enhance the Key Findings with narrative interpretation
-4. Write an Overall Conclusions section with positioning analysis, a summary
-   comparison table, and a bottom-line recommendation
+4. Write an Overall Assessment section with positioning analysis, a summary
+   table, and a bottom-line recommendation
 5. Summarize the key findings in the chat
 
-You can also ask follow-up questions about specific sections after the report
-is generated.
+If a model isn't found, Claude will present fuzzy-matched suggestions and
+optionally check the live AA API (`--check-api`) if none match.
 
 ### CLI
 
@@ -104,14 +111,20 @@ Use the CLI directly if you don't have a Claude Code session or don't need
 the narrative interpretation.
 
 ```bash
-# Compare specific models -- report auto-named in reports/
+# Evaluate a single model -- report auto-named in reports/
+uv run compare-models compare -m "claude-opus-4-6"
+
+# Compare specific models
 uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b"
 
 # Compare entire model families
 uv run compare-models compare -m "trinity,qwen" --families
 
 # Use only specific sources
-uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --sources arena
+uv run compare-models compare -m "claude-opus-4-6" --sources arena
+
+# Check the live AA API for models not in the cache
+uv run compare-models compare -m "some-new-model" --check-api
 
 # Generate a PDF alongside the markdown report
 uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --pdf
@@ -127,6 +140,14 @@ Reports are saved to `reports/` with auto-generated names based on the models
 compared, date, and a sequence number (e.g., `qwen_trinity_2026_05_01_00.md`).
 Use `-o` to override the path.
 
+### Fuzzy Matching
+
+If a model name isn't found, the CLI suggests similar models:
+
+```
+Model "gemni-3" not found. Similar models: gemini-3-pro, gemini-3-flash, gemini-3.1-pro-preview
+```
+
 ## Output Structure
 
 The generated markdown report includes:
@@ -136,24 +157,12 @@ The generated markdown report includes:
 - **Category Ratings** -- General capabilities (7 categories) and industry categories
   (7 categories) side-by-side
 - **Head-to-Head** -- Pairwise comparison across all 14 categories with deltas and
-  winner per category
-- **Win/Loss Summary** -- Cross-matchup overview
+  winner per category (multi-model reports)
+- **Win/Loss Summary** -- Cross-matchup overview (multi-model reports)
 - **Key Findings** -- Analytical findings (positioning, strengths, weaknesses,
   profile characterization)
-- **Overall Conclusions** -- Narrative analysis (added by the `/compare-models`
+- **Overall Assessment** -- Narrative analysis (added by the `/compare-models`
   skill)
-
-## Updating AA Data
-
-Sync the latest model data from the Artificial Analysis API:
-
-```bash
-uv run compare-models sync-aa
-```
-
-Data is cached at `~/.cache/compare-models/aa_models.json` (override with the
-`COMPARE_MODELS_CACHE_DIR` environment variable). The cache age is displayed
-when running comparisons.
 
 ## Development
 

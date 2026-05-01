@@ -7,6 +7,7 @@ import subprocess
 from collections import Counter
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -88,6 +89,12 @@ def main() -> None:
     help="Path to custom Artificial Analysis JSON data file (bypasses cache).",
 )
 @click.option("--pdf", is_flag=True, default=False, help="Also generate a PDF via pandoc.")
+@click.option(
+    "--check-api",
+    is_flag=True,
+    default=False,
+    help="If models aren't found in the AA cache, check the live API.",
+)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def compare(
     models: str,
@@ -96,6 +103,7 @@ def compare(
     sources: str | None,
     aa_data: str | None,
     pdf: bool,
+    check_api: bool,
     verbose: bool,
 ) -> None:
     """Compare LLM models across evaluation sources."""
@@ -115,9 +123,12 @@ def compare(
     result = ComparisonResult(model_names=model_names)
 
     for source_name in source_names:
-        kwargs: dict[str, Path] = {}
-        if source_name == "artificial_analysis" and aa_data:
-            kwargs["data_path"] = Path(aa_data)
+        kwargs: dict[str, Any] = {}
+        if source_name == "artificial_analysis":
+            if aa_data:
+                kwargs["data_path"] = Path(aa_data)
+            if check_api:
+                kwargs["check_api"] = True
 
         try:
             source = get_source(source_name, **kwargs)
@@ -125,13 +136,15 @@ def compare(
             click.echo(f"Warning: {e}", err=True)
             continue
 
-        click.echo(f"Fetching data from {source.name}...")
         source_data = source.fetch_and_compare(model_names, families=families)
         result.sources.append(source_data)
 
         found_count = len(source_data.models_found)
         not_found_count = len(source_data.models_not_found)
         click.echo(f"  Found {found_count} models, {not_found_count} not found.")
+
+        for name, similar in source_data.suggestions.items():
+            click.echo(f'  Model "{name}" not found. Similar models: {", ".join(similar)}')
 
     if not result.sources:
         raise click.ClickException("No data sources produced results.")
@@ -185,3 +198,23 @@ def sync_aa(api_key: str, verbose: bool) -> None:
         raise click.ClickException(str(e)) from e
 
     click.echo(f"Synced {count} models to {cache_path}")
+
+
+@main.command("sync-arena")
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
+def sync_arena(verbose: bool) -> None:
+    """Sync Arena leaderboard data from HuggingFace."""
+    from compare_models import arena_client
+
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+
+    click.echo("Fetching Arena leaderboard from HuggingFace...")
+    try:
+        count, cache_path = arena_client.sync()
+    except Exception as e:
+        raise click.ClickException(str(e)) from e
+
+    click.echo(f"Synced {count} rows to {cache_path}")

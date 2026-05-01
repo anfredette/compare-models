@@ -32,7 +32,8 @@ class TestCLI:
         assert result.exit_code == 0
         assert "--api-key" in result.output
 
-    def test_sync_aa_no_key_error(self) -> None:
+    def test_sync_aa_no_key_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("AA_API_KEY", raising=False)
         runner = CliRunner()
         result = runner.invoke(main, ["sync-aa"])
         assert result.exit_code != 0

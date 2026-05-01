@@ -19,3 +19,7 @@ build/
 comparison.md
 *.generated.md
 reports/
+
+# Data caches and backups
+.model_cache/
+aa_models_backup.json

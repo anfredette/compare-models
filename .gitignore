@@ -18,3 +18,4 @@ build/
 # Output files
 comparison.md
 *.generated.md
+reports/

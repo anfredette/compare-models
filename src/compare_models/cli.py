@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import logging
+import re
+import shutil
+import subprocess
+from collections import Counter
+from datetime import date
 from pathlib import Path
 
 import click
@@ -10,6 +15,39 @@ import compare_models.sources.artificial_analysis  # noqa: F401
 from compare_models.models import ComparisonResult
 from compare_models.renderer import render_comparison
 from compare_models.sources import get_available_sources, get_source
+
+REPORTS_DIR = Path("reports")
+
+
+def generate_output_path(model_names: list[str]) -> Path:
+    """Generate an auto-named report path in reports/.
+
+    Format: reports/{short1}_{short2}_{YYYY}_{MM}_{DD}_{NN}.md
+    where NN increments from the highest existing file with the same prefix.
+    """
+    parts = [name.split("-")[0] for name in model_names]
+    counts = Counter(parts)
+    if any(c > 1 for c in counts.values()):
+        parts = []
+        for name in model_names:
+            tokens = name.split("-")
+            parts.append(tokens[1] if len(tokens) > 1 else tokens[0])
+
+    prefix = "_".join(sorted(set(parts)))
+    today = date.today().strftime("%Y_%m_%d")
+    base = f"{prefix}_{today}"
+
+    REPORTS_DIR.mkdir(exist_ok=True)
+
+    existing = list(REPORTS_DIR.glob(f"{base}_*.md"))
+    max_n = -1
+    pattern = re.compile(rf"^{re.escape(base)}_(\d+)\.md$")
+    for p in existing:
+        m = pattern.match(p.name)
+        if m:
+            max_n = max(max_n, int(m.group(1)))
+
+    return REPORTS_DIR / f"{base}_{max_n + 1:02d}.md"
 
 
 @click.command()
@@ -28,9 +66,9 @@ from compare_models.sources import get_available_sources, get_source
 @click.option(
     "--output",
     "-o",
-    default="comparison.md",
+    default=None,
     type=click.Path(),
-    help="Output markdown file path.",
+    help="Output markdown file path. Auto-generates in reports/ if not set.",
 )
 @click.option(
     "--sources",
@@ -44,6 +82,7 @@ from compare_models.sources import get_available_sources, get_source
     default=None,
     help="Path to custom Artificial Analysis JSON data file.",
 )
+@click.option("--pdf", is_flag=True, default=False, help="Also generate a PDF via pandoc.")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def main(
     models: str,
@@ -51,6 +90,7 @@ def main(
     output: str,
     sources: str | None,
     aa_data: str | None,
+    pdf: bool,
     verbose: bool,
 ) -> None:
     """Compare LLM models using evaluation data from multiple sources."""
@@ -91,6 +131,26 @@ def main(
     if not result.sources:
         raise click.ClickException("No data sources produced results.")
 
-    output_path = Path(output)
+    output_path = Path(output) if output else generate_output_path(model_names)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     render_comparison(result, output_path)
     click.echo(f"Comparison written to {output_path}")
+
+    if pdf:
+        if not shutil.which("pandoc"):
+            raise click.ClickException(
+                "pandoc is required for --pdf. Install: brew install pandoc (macOS) or apt install pandoc (Linux)."
+            )
+        pdf_path = output_path.with_suffix(".pdf")
+        proc = subprocess.run(
+            ["pandoc", str(output_path), "-o", str(pdf_path)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise click.ClickException(
+                f"pandoc failed — a LaTeX engine is required for PDF output.\n"
+                f"Install one: brew install mactex-no-gui (macOS) or apt install texlive-xetex (Linux).\n"
+                f"pandoc error: {proc.stderr.strip()}"
+            )
+        click.echo(f"PDF written to {pdf_path}")

@@ -94,9 +94,10 @@ class TestLoadModels:
         ]
         p = tmp_path / "test.json"
         p.write_text(json.dumps(data))
-        models = _load_models(p)
+        models, status = _load_models(p)
         assert len(models) == 1
         assert models[0].name == "Test Model"
+        assert "loaded from" in status
 
 
 @pytest.mark.unit

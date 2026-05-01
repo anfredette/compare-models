@@ -52,6 +52,7 @@ class SourceData:
     models_found: list[str] = field(default_factory=list)
     models_not_found: list[str] = field(default_factory=list)
     suggestions: dict[str, list[str]] = field(default_factory=dict)
+    cache_status: str | None = None
 
 
 @dataclass

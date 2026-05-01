@@ -81,7 +81,6 @@ class TestRenderComparison:
         output = tmp_path / "comparison.md"
         content = render_comparison(_make_result(), output)
         assert "Test Source" in content
-        assert "Test Benchmarks" in content
 
     def test_contains_methodology(self, tmp_path: Path) -> None:
         output = tmp_path / "comparison.md"

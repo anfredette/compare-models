@@ -89,12 +89,6 @@ def main() -> None:
     help="Path to custom Artificial Analysis JSON data file (bypasses cache).",
 )
 @click.option("--pdf", is_flag=True, default=False, help="Also generate a PDF via pandoc.")
-@click.option(
-    "--check-api",
-    is_flag=True,
-    default=False,
-    help="If models aren't found in the AA cache, check the live API.",
-)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def compare(
     models: str,
@@ -103,7 +97,6 @@ def compare(
     sources: str | None,
     aa_data: str | None,
     pdf: bool,
-    check_api: bool,
     verbose: bool,
 ) -> None:
     """Compare LLM models across evaluation sources."""
@@ -127,8 +120,6 @@ def compare(
         if source_name == "artificial_analysis":
             if aa_data:
                 kwargs["data_path"] = Path(aa_data)
-            if check_api:
-                kwargs["check_api"] = True
 
         try:
             source = get_source(source_name, **kwargs)
@@ -141,7 +132,12 @@ def compare(
 
         found_count = len(source_data.models_found)
         not_found_count = len(source_data.models_not_found)
-        click.echo(f"  Found {found_count} models, {not_found_count} not found.")
+        status = source_data.cache_status or ""
+        parts = [f"{source.name}: {status}"]
+        parts.append(f"found {found_count} model{'s' if found_count != 1 else ''}")
+        if not_found_count:
+            parts.append(f"{not_found_count} not found")
+        click.echo(", ".join(parts) + ".")
 
         for name, similar in source_data.suggestions.items():
             click.echo(f'  Model "{name}" not found. Similar models: {", ".join(similar)}')

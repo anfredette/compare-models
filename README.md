@@ -102,8 +102,8 @@ Claude will:
    table, and a bottom-line recommendation
 5. Summarize the key findings in the chat
 
-If a model isn't found, Claude will present fuzzy-matched suggestions and
-optionally check the live AA API (`--check-api`) if none match.
+If a model isn't found, Claude will present fuzzy-matched suggestions. If
+none match, it will offer to sync the caches to pick up newly added models.
 
 ### CLI
 
@@ -122,9 +122,6 @@ uv run compare-models compare -m "trinity,qwen" --families
 
 # Use only specific sources
 uv run compare-models compare -m "claude-opus-4-6" --sources arena
-
-# Check the live AA API for models not in the cache
-uv run compare-models compare -m "some-new-model" --check-api
 
 # Generate a PDF alongside the markdown report
 uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --pdf

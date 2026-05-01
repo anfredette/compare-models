@@ -11,15 +11,13 @@ When the user asks to compare models:
    - For specific sources only: add `--sources arena` or `--sources artificial_analysis`
    - The CLI auto-generates a report name in `reports/` (e.g., `reports/claude_gpt_2025_05_01_00.md`). Use `-o path` only to override.
    - Do NOT add `--pdf` yet — generate the PDF after adding analysis (see step 7)
-   - Do NOT add `--check-api` on the first run — only use it if the user opts in (see step 4)
 3. Run the command from the compare-models project directory (`/Users/anfredet/go/src/github.com/compare-models/`)
 4. **If models are not found:** Check the CLI output for suggestion lines and not-found counts.
    - The CLI prints `Model "xyz" not found. Similar models: a, b, c` for each not-found model with fuzzy matches.
    - **Present suggestions to the user:** "Model 'xyz' wasn't found. Did you mean one of: a, b, c?"
    - Wait for the user's response, then re-run the CLI with the corrected model names.
-   - **If no good fuzzy matches exist** (or the user says none of those), ask: "Want me to check the AA API for this model? (This uses the AA API budget.)"
-   - If the user says yes, re-run with `--check-api` to query the live AA API for the missing models.
-   - If `--check-api` finds models, the CLI output will note them as "found via live API but missing from cache." After the report is complete, suggest: "Some models were found via the live API but aren't in your local cache. Run `uv run compare-models sync-aa` to update."
+   - **If no good fuzzy matches exist** (or the user says none of those), suggest syncing the cache: "The model might be new. Want me to run `uv run compare-models sync-aa` and/or `uv run compare-models sync-arena` to refresh the data?"
+   - If the user says yes, sync the relevant cache(s) and re-run the compare command.
    - If AA reports 0 models total (empty cache), suggest running `uv run compare-models sync-aa` first.
 5. Read the generated report file (parse the path from the CLI's "Comparison written to ..." output)
 6. **Enhance the report with analysis** (do not ask for permission — this is what the user is requesting by invoking /compare-models):

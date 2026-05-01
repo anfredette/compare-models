@@ -82,24 +82,27 @@ def _short_cat(cat: str) -> str:
     return CATEGORY_SHORT.get(cat, cat)
 
 
-def _fetch_arena() -> pd.DataFrame:
+def _fetch_arena() -> tuple[pd.DataFrame, str]:
     rows, fetched_at = arena_client.load_cache()
     if not rows:
         logger.info("No Arena cache found, fetching from HuggingFace...")
         count, _ = arena_client.sync()
         logger.info("Synced %d rows from Arena", count)
         rows, fetched_at = arena_client.load_cache()
+        status = "fetched from HuggingFace"
     elif is_cache_stale(fetched_at):
         logger.info("Arena cache is stale, refreshing from HuggingFace...")
         try:
             count, _ = arena_client.sync()
             logger.info("Refreshed %d rows from Arena", count)
             rows, fetched_at = arena_client.load_cache()
+            status = "refreshed from HuggingFace"
         except Exception:
             logger.warning("Arena auto-refresh failed, using stale cache")
+            status = f"using stale cache (synced {cache_age_display(fetched_at)})"
     else:
-        logger.info("Using cached Arena data (synced %s)", cache_age_display(fetched_at))
-    return pd.DataFrame(rows)
+        status = f"using cache (synced {cache_age_display(fetched_at)})"
+    return pd.DataFrame(rows), status
 
 
 def _resolve_family_models(
@@ -608,12 +611,11 @@ class ArenaSource:
         families: bool = False,
         **kwargs: Any,
     ) -> SourceData:
-        df = _fetch_arena()
+        df, cache_status = _fetch_arena()
 
         family_not_found: list[str] = []
         if families:
             model_names, family_not_found = _resolve_family_models(df, model_names)
-            logger.info(f"Resolved {len(model_names)} models from family names")
 
         found, not_found = _find_models(df, model_names)
         not_found.extend(family_not_found)
@@ -636,6 +638,7 @@ class ArenaSource:
                 models_not_found=not_found,
                 suggestions=suggestions,
                 findings=["No matching models found in Arena leaderboard."],
+                cache_status=cache_status,
             )
 
         global_rankings = [_consolidated_ranking_table(df, found)]
@@ -668,6 +671,7 @@ class ArenaSource:
             models_found=found,
             models_not_found=not_found,
             suggestions=suggestions,
+            cache_status=cache_status,
         )
 
 

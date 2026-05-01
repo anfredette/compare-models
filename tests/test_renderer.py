@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from compare_models.models import (
+from model_eval.models import (
     ComparisonResult,
     ComparisonTable,
     HeadToHead,
     SourceData,
 )
-from compare_models.renderer import render_comparison
+from model_eval.renderer import render_comparison
 
 
 def _make_result() -> ComparisonResult:

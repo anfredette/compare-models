@@ -1,26 +1,26 @@
-Compare LLM models using Arena and Artificial Analysis data.
+Evaluate and compare LLM models using Arena and Artificial Analysis data.
 
-## Comparing Models
+## Evaluating Models
 
-When the user asks to compare models:
+When the user asks to evaluate or compare models:
 
-1. Parse which models or families they want to compare from their message
+1. Parse which models or families they want to evaluate from their message
 2. Build the appropriate CLI command:
-   - For specific models: `uv run compare-models compare -m "model1,model2"`
-   - For model families: `uv run compare-models compare -m "family1,family2" --families`
+   - For specific models: `uv run model-eval -m "model1,model2"`
+   - For model families: `uv run model-eval -m "family1,family2" --families`
    - For specific sources only: add `--sources arena` or `--sources artificial_analysis`
    - The CLI auto-generates a report name in `reports/` (e.g., `reports/claude_gpt_2025_05_01_00.md`). Use `-o path` only to override.
    - Do NOT add `--pdf` yet — generate the PDF after adding analysis (see step 7)
-3. Run the command from the compare-models project directory (`/Users/anfredet/go/src/github.com/compare-models/`)
+3. Run the command from the model-eval project directory (`/Users/anfredet/go/src/github.com/model-eval/`)
 4. **If models are not found:** Check the CLI output for suggestion lines and not-found counts.
    - The CLI prints `Model "xyz" not found. Similar models: a, b, c` for each not-found model with fuzzy matches.
    - **Present suggestions to the user:** "Model 'xyz' wasn't found. Did you mean one of: a, b, c?"
    - Wait for the user's response, then re-run the CLI with the corrected model names.
-   - **If no good fuzzy matches exist** (or the user says none of those), suggest syncing the cache: "The model might be new. Want me to run `uv run compare-models sync-aa` and/or `uv run compare-models sync-arena` to refresh the data?"
-   - If the user says yes, sync the relevant cache(s) and re-run the compare command.
-   - If AA reports 0 models total (empty cache), suggest running `uv run compare-models sync-aa` first.
+   - **If no good fuzzy matches exist** (or the user says none of those), suggest syncing the cache: "The model might be new. Want me to run `uv run model-eval sync-aa` and/or `uv run model-eval sync-arena` to refresh the data?"
+   - If the user says yes, sync the relevant cache(s) and re-run the command.
+   - If AA reports 0 models total (empty cache), suggest running `uv run model-eval sync-aa` first.
 5. Read the generated report file (parse the path from the CLI's "Comparison written to ..." output)
-6. **Enhance the report with analysis** (do not ask for permission — this is what the user is requesting by invoking /compare-models):
+6. **Enhance the report with analysis** (do not ask for permission — this is what the user is requesting by invoking /model-eval):
 
    a. **Enhance the Key Findings sections with interpretive prose:**
       - Read the Arena Key Findings and AA Key Findings sections in the generated file
@@ -71,15 +71,16 @@ Both sources cache data locally in `.model_cache/` inside the project directory.
 - **Manual sync**: use `sync-aa` or `sync-arena` to force a refresh
 
 ```bash
-uv run compare-models sync-aa       # Refresh AA data (requires AA_API_KEY)
-uv run compare-models sync-arena    # Refresh Arena data (no key needed)
+uv run model-eval sync-aa       # Refresh AA data (requires AA_API_KEY)
+uv run model-eval sync-arena    # Refresh Arena data (no key needed)
 ```
 
 If AA auto-sync fails with an auth error, tell the user to check that `AA_API_KEY` is set correctly.
-The `--aa-data` flag on `compare` can override the AA cache with a custom JSON file.
+The `--aa-data` flag can override the AA cache with a custom JSON file.
 
 ## Usage Examples
 
+- "Evaluate claude-opus-4-6"
 - "Compare trinity-large-preview with qwen3-235b-a22b"
 - "How does Trinity stack up against Qwen models?" (use --families)
 - "Compare just Arena data for trinity and qwen" (use --sources arena)

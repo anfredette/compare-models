@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from compare_models.resolver import suggest_similar
+from model_eval.resolver import suggest_similar
 
 
 @pytest.mark.unit

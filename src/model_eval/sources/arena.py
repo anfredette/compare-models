@@ -5,11 +5,11 @@ from typing import Any
 
 import pandas as pd
 
-from compare_models import arena_client
-from compare_models.aa_client import cache_age_display, is_cache_stale
-from compare_models.models import ComparisonTable, HeadToHead, SourceData
-from compare_models.resolver import suggest_similar
-from compare_models.sources import register_source
+from model_eval import arena_client
+from model_eval.aa_client import cache_age_display, is_cache_stale
+from model_eval.models import ComparisonTable, HeadToHead, SourceData
+from model_eval.resolver import suggest_similar
+from model_eval.sources import register_source
 
 logger = logging.getLogger(__name__)
 

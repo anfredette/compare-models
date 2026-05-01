@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from compare_models.sources.artificial_analysis import (
+from model_eval.sources.artificial_analysis import (
     AAModel,
     _comparison_table,
     _compute_findings,

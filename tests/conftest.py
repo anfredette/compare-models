@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from compare_models.sources.artificial_analysis import AAModel
+from model_eval.sources.artificial_analysis import AAModel
 
 
 @pytest.fixture

@@ -2,15 +2,15 @@
 
 ## Project Overview
 
-CLI tool for automated LLM model comparison. Uses a provider pattern for data sources — each source implements a `DataSource` protocol in `src/compare_models/sources/`.
+CLI tool for automated LLM model evaluation and comparison. Uses a provider pattern for data sources — each source implements a `DataSource` protocol in `src/model_eval/sources/`.
 
 ## Repository Structure
 
-- `src/compare_models/` — Main package (src layout)
+- `src/model_eval/` — Main package (src layout)
   - `sources/` — Data source providers (arena.py, artificial_analysis.py)
   - `templates/` — Jinja2 report templates
   - `aa_client.py` — Artificial Analysis API client and cache management
-  - `cli.py` — Click CLI entry point (group with `compare` and `sync-aa` subcommands)
+  - `cli.py` — Click CLI entry point (group with `sync-aa` and `sync-arena` subcommands)
   - `models.py` — Pydantic data models
   - `resolver.py` — Model name resolution
   - `renderer.py` — Report generation
@@ -23,7 +23,7 @@ Uses **uv** for package management. Do not use pip.
 
 ```bash
 uv sync --extra dev        # Install all deps
-uv run compare-models ...  # Run the CLI
+uv run model-eval ...      # Run the CLI
 uv run pytest tests/ -v    # Run tests
 ```
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# DEPRECATED: Use `compare-models sync-aa` instead.
+# DEPRECATED: Use `model-eval sync-aa` instead.
 # This script scrapes AA's website directly. The sync-aa command
 # uses the official AA API, which is the supported access method.
 """Scrape Artificial Analysis model data from individual model pages.
 
-DEPRECATED: Use `compare-models sync-aa` instead.
+DEPRECATED: Use `model-eval sync-aa` instead.
 
 Extracts data from JSON-LD structured data (FAQPage schema) embedded in each
 model page's HTML. No JavaScript rendering needed.
@@ -28,7 +28,7 @@ OUTPUT_PATH = Path(__file__).parent.parent / "data" / "artificial_analysis.json"
 SITEMAP_URL = "https://artificialanalysis.ai/sitemap.xml"
 BASE_URL = "https://artificialanalysis.ai"
 HEADERS = {
-    "User-Agent": "compare-models-scraper/1.0 (research tool)",
+    "User-Agent": "model-eval-scraper/1.0 (research tool)",
     "Accept": "text/html",
 }
 DELAY_BETWEEN_REQUESTS = 1.0  # seconds

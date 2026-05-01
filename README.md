@@ -1,28 +1,26 @@
-# compare-models
+# model-eval
 
 Automated LLM model evaluation tool that generates detailed reports from
-multiple evaluation sources. It pulls data from
-[Arena](https://lmarena.ai/) (human preference ratings) and
-[Artificial Analysis](https://artificialanalysis.ai/) (automated benchmarks,
-speed, latency, and pricing), then produces a report with
-global rankings, category breakdowns, head-to-head comparisons, and key
-findings.
+multiple evaluation sources. It pulls data from [Arena](https://lmarena.ai/)
+(human preference ratings) and [Artificial
+Analysis](https://artificialanalysis.ai/) (automated benchmarks, speed, latency,
+and pricing), then produces a report with global rankings, category breakdowns,
+head-to-head comparisons, and key findings.
 
 Works for **single-model evaluation** (where does this model rank?) and
 **multi-model comparison** (how do these models or families stack up?).
 
 The tool works in two modes: a **CLI** that generates data-driven reports with
-deterministic findings, and a **Claude skill** (`/compare-models`) that runs
-the CLI and then layers on narrative analysis with an Overall Assessment
-section.
+deterministic findings, and a **Claude skill** (`/model-eval`) that runs the CLI
+and then layers on narrative analysis with an Overall Assessment section.
 
 ## Installation
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/anfredette/compare-models.git
-cd compare-models
+git clone https://github.com/anfredette/model-eval.git
+cd model-eval
 uv sync
 ```
 
@@ -31,7 +29,8 @@ uv sync
 ### Data Sources
 
 Both data sources cache locally in `.model_cache/` inside the project directory.
-Caches auto-refresh if older than 24 hours, and auto-fetch if empty on first run.
+Caches auto-refresh if older than 24 hours, and auto-fetch if empty on first
+run.
 
 **Arena** (no setup needed): Data is fetched from HuggingFace automatically.
 
@@ -42,11 +41,11 @@ Caches auto-refresh if older than 24 hours, and auto-fetch if empty on first run
 export AA_API_KEY=your_api_key_here
 ```
 
-On first run, the AA cache will auto-populate. You can also sync manually:
+On first run, both caches will auto-populate. You can also sync manually:
 
 ```bash
-uv run compare-models sync-aa       # Refresh AA data (requires AA_API_KEY)
-uv run compare-models sync-arena    # Refresh Arena data (no key needed)
+uv run model-eval sync-aa       # Refresh AA data (requires AA_API_KEY)
+uv run model-eval sync-arena    # Refresh Arena data (no key needed)
 ```
 
 If AA auto-sync fails with an auth error, check that `AA_API_KEY` is set
@@ -70,31 +69,32 @@ sudo dnf install pandoc texlive-latex
 
 ### Claude Skill (recommended)
 
-The best results come from running inside a
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) session. The
-`/compare-models` skill provides a natural language interface -- just describe
-what you want to evaluate and Claude handles the rest. It builds the right CLI
-command, reads the generated report, then enhances it with interpretive Key
-Findings and a full Overall Assessment section covering positioning, value
-proposition, quality profiles, and a side-by-side summary table.
+The best results come from running inside a [Claude
+Code](https://docs.anthropic.com/en/docs/claude-code) session. The `/model-eval`
+skill provides a natural language interface -- just describe what you want to
+evaluate and Claude handles the rest. It builds the right CLI command, reads the
+generated report, then enhances it with interpretive Key Findings and a full
+Overall Assessment section covering positioning, value proposition, quality
+profiles, and a side-by-side summary table.
 
-From the `compare-models` project directory:
+From the `model-eval` project directory:
 
 ```bash
-cd /path/to/compare-models
+cd /path/to/model-eval
 claude
 ```
 
 Then use the skill:
 
 ```
-/compare-models Evaluate claude-opus-4-6
-/compare-models Compare Trinity vs Qwen model families
-/compare-models How does Gemini 3 stack up against Gemma 4?
-/compare-models Compare just Arena data for trinity and qwen, and generate a PDF
+/model-eval Evaluate claude-opus-4-6
+/model-eval Compare Trinity vs Qwen model families
+/model-eval How does Gemini 3 stack up against Gemma 4?
+/model-eval Compare just Arena data for trinity and qwen, and generate a PDF
 ```
 
 Claude will:
+
 1. Parse the natural language request and build the appropriate CLI command
 2. Run the CLI to generate data tables, head-to-head comparisons, and findings
 3. Enhance the Key Findings with narrative interpretation
@@ -102,35 +102,35 @@ Claude will:
    table, and a bottom-line recommendation
 5. Summarize the key findings in the chat
 
-If a model isn't found, Claude will present fuzzy-matched suggestions. If
-none match, it will offer to sync the caches to pick up newly added models.
+If a model isn't found, Claude will present fuzzy-matched suggestions. If none
+match, it will offer to sync the caches to pick up newly added models.
 
 ### CLI
 
-Use the CLI directly if you don't have a Claude Code session or don't need
-the narrative interpretation.
+Use the CLI directly if you don't have a Claude Code session or don't need the
+narrative interpretation.
 
 ```bash
 # Evaluate a single model -- report auto-named in reports/
-uv run compare-models compare -m "claude-opus-4-6"
+uv run model-eval -m "claude-opus-4-6"
 
 # Compare specific models
-uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b"
+uv run model-eval -m "trinity-large-preview,qwen3-235b-a22b"
 
 # Compare entire model families
-uv run compare-models compare -m "trinity,qwen" --families
+uv run model-eval -m "trinity,qwen" --families
 
 # Use only specific sources
-uv run compare-models compare -m "claude-opus-4-6" --sources arena
+uv run model-eval -m "claude-opus-4-6" --sources arena
 
 # Generate a PDF alongside the markdown report
-uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --pdf
+uv run model-eval -m "trinity-large-preview,qwen3-235b-a22b" --pdf
 
 # Override the output path (skips auto-naming)
-uv run compare-models compare -m "trinity,qwen" --families -o custom_report.md
+uv run model-eval -m "trinity,qwen" --families -o custom_report.md
 
 # Use a custom AA data file instead of the cache
-uv run compare-models compare -m "trinity,qwen" --aa-data path/to/data.json
+uv run model-eval -m "trinity,qwen" --aa-data path/to/data.json
 ```
 
 Reports are saved to `reports/` with auto-generated names based on the models
@@ -150,15 +150,16 @@ Model "gemni-3" not found. Similar models: gemini-3-pro, gemini-3-flash, gemini-
 The generated markdown report includes:
 
 - **Global Rankings** -- Consolidated leaderboard showing each subject model's
-  neighborhood (+-5 models), with `[N models not shown]` gap markers for distant models
-- **Category Ratings** -- General capabilities (7 categories) and industry categories
-  (7 categories) side-by-side
-- **Head-to-Head** -- Pairwise comparison across all 14 categories with deltas and
-  winner per category (multi-model reports)
+  neighborhood (+-5 models), with `[N models not shown]` gap markers for distant
+  models
+- **Category Ratings** -- General capabilities (7 categories) and industry
+  categories (7 categories) side-by-side
+- **Head-to-Head** -- Pairwise comparison across all 14 categories with deltas
+  and winner per category (multi-model reports)
 - **Win/Loss Summary** -- Cross-matchup overview (multi-model reports)
 - **Key Findings** -- Analytical findings (positioning, strengths, weaknesses,
   profile characterization)
-- **Overall Assessment** -- Narrative analysis (added by the `/compare-models`
+- **Overall Assessment** -- Narrative analysis (added by the `/model-eval`
   skill)
 
 ## Development
@@ -173,7 +174,7 @@ make test       # Run all tests
 
 ## Adding a New Data Source
 
-1. Create a new module in `src/compare_models/sources/`
+1. Create a new module in `src/model_eval/sources/`
 2. Implement the `DataSource` protocol (see `sources/__init__.py`)
 3. Call `register_source("name", YourSourceClass)` at module level
 4. Import the module in `cli.py` to trigger registration

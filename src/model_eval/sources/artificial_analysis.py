@@ -8,10 +8,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from compare_models import aa_client
-from compare_models.models import ComparisonTable, SourceData
-from compare_models.resolver import suggest_similar
-from compare_models.sources import register_source
+from model_eval import aa_client
+from model_eval.models import ComparisonTable, SourceData
+from model_eval.resolver import suggest_similar
+from model_eval.sources import register_source
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def _load_models(data_path: Path | None) -> tuple[list[AAModel], str]:
                 raise RuntimeError(
                     "No Artificial Analysis cache found and AA_API_KEY is not set. "
                     "Set AA_API_KEY in your environment for auto-sync, "
-                    "or run 'compare-models sync-aa --api-key <key>'."
+                    "or run 'model-eval sync-aa --api-key <key>'."
                 )
             logger.info("No Artificial Analysis cache found, fetching from API...")
             try:

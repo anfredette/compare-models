@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from compare_models.aa_client import (
+from model_eval.aa_client import (
     _infer_reasoning,
     _map_api_model,
     cache_age_display,
@@ -89,7 +89,7 @@ class TestInferReasoning:
 @pytest.mark.unit
 class TestCacheRoundTrip:
     def test_save_and_load(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import compare_models.aa_client as mod
+        import model_eval.aa_client as mod
 
         monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
         models = [{"name": "Test", "slug": "test", "organization": "Org", "intelligence_index": 30}]
@@ -102,7 +102,7 @@ class TestCacheRoundTrip:
         assert fetched_at is not None
 
     def test_load_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import compare_models.aa_client as mod
+        import model_eval.aa_client as mod
 
         monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
         loaded, fetched_at = load_cache()
@@ -110,7 +110,7 @@ class TestCacheRoundTrip:
         assert fetched_at is None
 
     def test_load_corrupt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import compare_models.aa_client as mod
+        import model_eval.aa_client as mod
 
         monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
         cache_dir = tmp_path / ".model_cache"

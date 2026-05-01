@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from compare_models.models import SourceData
+from model_eval.models import SourceData
 
 
 @runtime_checkable

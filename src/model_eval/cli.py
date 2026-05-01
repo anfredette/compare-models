@@ -11,11 +11,11 @@ from typing import Any
 
 import click
 
-import compare_models.sources.arena  # noqa: F401
-import compare_models.sources.artificial_analysis  # noqa: F401
-from compare_models.models import ComparisonResult
-from compare_models.renderer import render_comparison
-from compare_models.sources import get_available_sources, get_source
+import model_eval.sources.arena  # noqa: F401
+import model_eval.sources.artificial_analysis  # noqa: F401
+from model_eval.models import ComparisonResult
+from model_eval.renderer import render_comparison
+from model_eval.sources import get_available_sources, get_source
 
 REPORTS_DIR = Path("reports")
 
@@ -51,17 +51,12 @@ def generate_output_path(model_names: list[str]) -> Path:
     return REPORTS_DIR / f"{base}_{max_n + 1:02d}.md"
 
 
-@click.group()
-def main() -> None:
-    """Compare LLM models using evaluation data from multiple sources."""
-
-
-@main.command()
+@click.group(invoke_without_command=True)
 @click.option(
     "--models",
     "-m",
-    required=True,
-    help="Comma-separated model or family names to compare.",
+    default=None,
+    help="Comma-separated model or family names to evaluate.",
 )
 @click.option(
     "--families",
@@ -90,16 +85,24 @@ def main() -> None:
 )
 @click.option("--pdf", is_flag=True, default=False, help="Also generate a PDF via pandoc.")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
-def compare(
-    models: str,
+@click.pass_context
+def main(
+    ctx: click.Context,
+    models: str | None,
     families: bool,
-    output: str,
+    output: str | None,
     sources: str | None,
     aa_data: str | None,
     pdf: bool,
     verbose: bool,
 ) -> None:
-    """Compare LLM models across evaluation sources."""
+    """Evaluate and compare LLM models using data from multiple sources."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if not models:
+        raise click.UsageError("Missing option '-m' / '--models'.")
+
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -179,7 +182,7 @@ def compare(
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def sync_aa(api_key: str, verbose: bool) -> None:
     """Sync Artificial Analysis model data from the API."""
-    from compare_models import aa_client
+    from model_eval import aa_client
 
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
@@ -199,7 +202,7 @@ def sync_aa(api_key: str, verbose: bool) -> None:
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def sync_arena(verbose: bool) -> None:
     """Sync Arena leaderboard data from HuggingFace."""
-    from compare_models import arena_client
+    from model_eval import arena_client
 
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,

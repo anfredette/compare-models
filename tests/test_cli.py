@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from click.testing import CliRunner
 
-from compare_models.cli import main
+from model_eval.cli import main
 
 
 @pytest.mark.unit
@@ -12,18 +12,12 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "compare" in result.output
+        assert "--models" in result.output
         assert "sync-aa" in result.output
 
-    def test_compare_help(self) -> None:
+    def test_no_models_error(self) -> None:
         runner = CliRunner()
-        result = runner.invoke(main, ["compare", "--help"])
-        assert result.exit_code == 0
-        assert "--models" in result.output
-
-    def test_compare_no_models_error(self) -> None:
-        runner = CliRunner()
-        result = runner.invoke(main, ["compare"])
+        result = runner.invoke(main, [])
         assert result.exit_code != 0
 
     def test_sync_aa_help(self) -> None:

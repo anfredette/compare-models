@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 from datasets import load_dataset
 
-from compare_models.aa_client import get_cache_dir
+from model_eval.aa_client import get_cache_dir
 
 logger = logging.getLogger(__name__)
 

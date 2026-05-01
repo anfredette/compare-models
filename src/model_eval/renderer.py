@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from compare_models.models import ComparisonResult
+from model_eval.models import ComparisonResult
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 

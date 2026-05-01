@@ -179,6 +179,12 @@ make test       # Run all tests
 3. Call `register_source("name", YourSourceClass)` at module level
 4. Import the module in `cli.py` to trigger registration
 
+## Attribution
+
+Data provided by *Artificial Analysis*
+([https://artificialanalysis.ai](https://artificialanalysis.ai/)) and *Arena*
+([https://lmarena.ai](https://lmarena.ai/)).
+
 ## License
 
 Apache-2.0

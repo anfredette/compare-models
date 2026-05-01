@@ -92,9 +92,7 @@ class TestCacheRoundTrip:
         import compare_models.aa_client as mod
 
         monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
-        models = [
-            {"name": "Test", "slug": "test", "organization": "Org", "intelligence_index": 30}
-        ]
+        models = [{"name": "Test", "slug": "test", "organization": "Org", "intelligence_index": 30}]
         path = save_cache(models)
         assert path.exists()
 

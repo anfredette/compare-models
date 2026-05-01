@@ -15,20 +15,12 @@ def _generate_introduction(result: ComparisonResult) -> str:
     n_sources = len(result.sources)
 
     if n_sources == 1:
-        intro = (
-            f"This document compares {names} using data from "
-            f"{result.sources[0].source_name}."
-        )
+        intro = f"This document compares {names} using data from {result.sources[0].source_name}."
     else:
-        intro = (
-            f"This document compares {names} using "
-            f"{n_sources} independent evaluation sources."
-        )
+        intro = f"This document compares {names} using {n_sources} independent evaluation sources."
 
     if n_sources >= 2:
-        found_sets = [
-            frozenset(s.models_found) for s in result.sources if s.models_found
-        ]
+        found_sets = [frozenset(s.models_found) for s in result.sources if s.models_found]
         if len(found_sets) >= 2 and len(set(found_sets)) > 1:
             intro += (
                 " Each source may evaluate different model variants, so the "

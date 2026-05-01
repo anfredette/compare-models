@@ -117,9 +117,8 @@ def compare(
 
     for source_name in source_names:
         kwargs: dict[str, Any] = {}
-        if source_name == "artificial_analysis":
-            if aa_data:
-                kwargs["data_path"] = Path(aa_data)
+        if source_name == "artificial_analysis" and aa_data:
+            kwargs["data_path"] = Path(aa_data)
 
         try:
             source = get_source(source_name, **kwargs)

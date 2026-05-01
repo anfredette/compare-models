@@ -98,9 +98,11 @@ def _fetch_arena() -> tuple[pd.DataFrame, str]:
             rows, fetched_at = arena_client.load_cache()
             status = "refreshed from HuggingFace"
         except Exception:
+            age = cache_age_display(fetched_at) if fetched_at else "unknown"
             logger.warning("Arena auto-refresh failed, using stale cache")
-            status = f"using stale cache (synced {cache_age_display(fetched_at)})"
+            status = f"using stale cache (synced {age})"
     else:
+        assert fetched_at is not None
         status = f"using cache (synced {cache_age_display(fetched_at)})"
     return pd.DataFrame(rows), status
 
@@ -417,9 +419,7 @@ def _compute_findings(
 
     parts = []
     if sweeps == len(h2hs):
-        parts.append(
-            f"sweeps all {total_cats} categories in every matchup ({len(h2hs)} matchups)"
-        )
+        parts.append(f"sweeps all {total_cats} categories in every matchup ({len(h2hs)} matchups)")
     else:
         if sweeps:
             parts.append(f"sweeps all {total_cats} categories in {sweeps} of {len(h2hs)} matchups")
@@ -469,8 +469,7 @@ def _compute_findings(
             )
             annotation = " -- the largest advantage" if i == 0 else ""
             lines.append(
-                f"   - **{dim}** (+{avg:.1f} avg, up to +{peak:.1f} vs "
-                f"`{rep.model_b}`){annotation}"
+                f"   - **{dim}** (+{avg:.1f} avg, up to +{peak:.1f} vs `{rep.model_b}`){annotation}"
             )
         findings.append("\n".join(lines))
 

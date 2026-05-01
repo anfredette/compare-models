@@ -128,6 +128,7 @@ def _load_models(data_path: Path | None) -> tuple[list[AAModel], str]:
                 )
                 status = f"using stale cache (synced {age}, no AA_API_KEY)"
         else:
+            assert fetched_at is not None
             status = f"using cache (synced {aa_client.cache_age_display(fetched_at)})"
     models = [m for m in (AAModel(**entry) for entry in raw) if m.intelligence_index is not None]
     return models, status

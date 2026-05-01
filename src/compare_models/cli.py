@@ -50,7 +50,12 @@ def generate_output_path(model_names: list[str]) -> Path:
     return REPORTS_DIR / f"{base}_{max_n + 1:02d}.md"
 
 
-@click.command()
+@click.group()
+def main() -> None:
+    """Compare LLM models using evaluation data from multiple sources."""
+
+
+@main.command()
 @click.option(
     "--models",
     "-m",
@@ -80,11 +85,11 @@ def generate_output_path(model_names: list[str]) -> Path:
     "--aa-data",
     type=click.Path(exists=True),
     default=None,
-    help="Path to custom Artificial Analysis JSON data file.",
+    help="Path to custom Artificial Analysis JSON data file (bypasses cache).",
 )
 @click.option("--pdf", is_flag=True, default=False, help="Also generate a PDF via pandoc.")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
-def main(
+def compare(
     models: str,
     families: bool,
     output: str,
@@ -93,7 +98,7 @@ def main(
     pdf: bool,
     verbose: bool,
 ) -> None:
-    """Compare LLM models using evaluation data from multiple sources."""
+    """Compare LLM models across evaluation sources."""
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -110,7 +115,7 @@ def main(
     result = ComparisonResult(model_names=model_names)
 
     for source_name in source_names:
-        kwargs = {}
+        kwargs: dict[str, Path] = {}
         if source_name == "artificial_analysis" and aa_data:
             kwargs["data_path"] = Path(aa_data)
 
@@ -154,3 +159,29 @@ def main(
                 f"pandoc error: {proc.stderr.strip()}"
             )
         click.echo(f"PDF written to {pdf_path}")
+
+
+@main.command("sync-aa")
+@click.option(
+    "--api-key",
+    envvar="AA_API_KEY",
+    required=True,
+    help="Artificial Analysis API key (or set AA_API_KEY env var).",
+)
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
+def sync_aa(api_key: str, verbose: bool) -> None:
+    """Sync Artificial Analysis model data from the API."""
+    from compare_models import aa_client
+
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+
+    click.echo("Fetching models from Artificial Analysis API...")
+    try:
+        count, cache_path = aa_client.sync(api_key)
+    except RuntimeError as e:
+        raise click.ClickException(str(e)) from e
+
+    click.echo(f"Synced {count} models to {cache_path}")

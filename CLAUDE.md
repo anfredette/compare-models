@@ -9,11 +9,12 @@ CLI tool for automated LLM model comparison. Uses a provider pattern for data so
 - `src/compare_models/` — Main package (src layout)
   - `sources/` — Data source providers (arena.py, artificial_analysis.py)
   - `templates/` — Jinja2 report templates
-  - `cli.py` — Click CLI entry point
+  - `aa_client.py` — Artificial Analysis API client and cache management
+  - `cli.py` — Click CLI entry point (group with `compare` and `sync-aa` subcommands)
   - `models.py` — Pydantic data models
   - `resolver.py` — Model name resolution
   - `renderer.py` — Report generation
-- `data/` — Static data files (AA benchmarks, model aliases)
+- `data/` — Static data files (model aliases)
 - `tests/` — Unit tests
 
 ## Development

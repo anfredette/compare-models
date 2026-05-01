@@ -23,6 +23,28 @@ cd compare-models
 uv sync
 ```
 
+## Setup
+
+### Artificial Analysis API Key
+
+To use Artificial Analysis data, you need a free API key from
+[artificialanalysis.ai](https://artificialanalysis.ai/). Set it as an
+environment variable:
+
+```bash
+export AA_API_KEY=your_api_key_here
+```
+
+Then sync the model data:
+
+```bash
+uv run compare-models sync-aa
+```
+
+This fetches all models from the AA API and caches them locally at
+`~/.cache/compare-models/aa_models.json`. Re-run `sync-aa` whenever you want
+to refresh the data.
+
 **Optional -- PDF output** requires [pandoc](https://pandoc.org/installing.html)
 and a LaTeX engine (pdflatex, xelatex, or lualatex):
 
@@ -83,19 +105,22 @@ the narrative interpretation.
 
 ```bash
 # Compare specific models -- report auto-named in reports/
-uv run compare-models -m "trinity-large-preview,qwen3-235b-a22b"
+uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b"
 
 # Compare entire model families
-uv run compare-models -m "trinity,qwen" --families
+uv run compare-models compare -m "trinity,qwen" --families
 
 # Use only specific sources
-uv run compare-models -m "trinity-large-preview,qwen3-235b-a22b" --sources arena
+uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --sources arena
 
 # Generate a PDF alongside the markdown report
-uv run compare-models -m "trinity-large-preview,qwen3-235b-a22b" --pdf
+uv run compare-models compare -m "trinity-large-preview,qwen3-235b-a22b" --pdf
 
 # Override the output path (skips auto-naming)
-uv run compare-models -m "trinity,qwen" --families -o custom_report.md
+uv run compare-models compare -m "trinity,qwen" --families -o custom_report.md
+
+# Use a custom AA data file instead of the cache
+uv run compare-models compare -m "trinity,qwen" --aa-data path/to/data.json
 ```
 
 Reports are saved to `reports/` with auto-generated names based on the models
@@ -120,15 +145,15 @@ The generated markdown report includes:
 
 ## Updating AA Data
 
-AA data lives in `data/artificial_analysis.json`. To refresh it:
+Sync the latest model data from the Artificial Analysis API:
 
 ```bash
-uv run python scripts/scrape_aa.py
+uv run compare-models sync-aa
 ```
 
-This scrapes all model pages from artificialanalysis.ai via their sitemap (takes
-~6 minutes with 1s delay between requests). You can also add individual models
-via the `/compare-models` skill -- ask Claude to "Add [model name] to the AA data".
+Data is cached at `~/.cache/compare-models/aa_models.json` (override with the
+`COMPARE_MODELS_CACHE_DIR` environment variable). The cache age is displayed
+when running comparisons.
 
 ## Development
 
@@ -149,4 +174,4 @@ make test       # Run all tests
 
 ## License
 
-Not open source -- contains proprietary Artificial Analysis data.
+Apache-2.0

@@ -6,8 +6,8 @@ When the user asks to compare models:
 
 1. Parse which models or families they want to compare from their message
 2. Build the appropriate CLI command:
-   - For specific models: `uv run compare-models -m "model1,model2"`
-   - For model families: `uv run compare-models -m "family1,family2" --families`
+   - For specific models: `uv run compare-models compare -m "model1,model2"`
+   - For model families: `uv run compare-models compare -m "family1,family2" --families`
    - For specific sources only: add `--sources arena` or `--sources artificial_analysis`
    - The CLI auto-generates a report name in `reports/` (e.g., `reports/claude_gpt_2025_05_01_00.md`). Use `-o path` only to override.
    - To also generate a PDF: add `--pdf` (requires pandoc and a LaTeX engine)
@@ -48,43 +48,29 @@ When the user asks to compare models:
 7. Summarize the key findings for the user
 8. Offer to explain specific sections in more detail
 
-## Updating Artificial Analysis Data
+## Syncing Artificial Analysis Data
 
-AA data is stored in `data/artificial_analysis.json`. When the user asks to add models,
-or when a comparison reports "0 models found" from AA for models that likely exist:
+AA data is fetched from the AA API and cached locally. When a comparison reports
+"0 models found" from AA, the user likely needs to sync:
 
-1. Use WebSearch to find the model on artificialanalysis.ai (search for
-   `artificialanalysis.ai <model name> intelligence speed price`)
-2. Extract these fields from the search results or WebFetch:
-   - `name`: Display name as shown on AA (e.g., "Claude Opus 4.7 (max)")
-   - `slug`: URL slug from the model page URL
-   - `organization`: Model developer
-   - `intelligence_index`: AA Intelligence Index score (integer)
-   - `speed_tps`: Output tokens/second (float or null)
-   - `ttft_s`: Time to first token in seconds (float or null)
-   - `input_price_per_1m`: Input price per 1M tokens (float or null)
-   - `output_price_per_1m`: Output price per 1M tokens (float or null)
-   - `context_window`: Context window in tokens (int or null)
-   - `params_total_b`: Total parameters in billions (float or null)
-   - `params_active_b`: Active parameters in billions (float or null)
-   - `reasoning`: Whether this is a reasoning model (boolean)
-   - `url`: Full URL to the AA model page
-   - `accessed_date`: Today's date (YYYY-MM-DD)
-3. Read the current `data/artificial_analysis.json` and append the new entry
-4. Run `make test` to verify the JSON is valid
+```bash
+export AA_API_KEY=your_key
+uv run compare-models sync-aa
+```
+
+This fetches all models (~500+) in a single API call and caches them at
+`~/.cache/compare-models/aa_models.json`. The `--aa-data` flag on `compare`
+can override this with a custom JSON file.
 
 ## Usage Examples
 
 - "Compare trinity-large-preview with qwen3-235b-a22b"
 - "How does Trinity stack up against Qwen models?" (use --families)
 - "Compare just Arena data for trinity and qwen" (use --sources arena)
-- "Add Claude Opus 4.7 to the AA data"
-- "Update the AA data for the latest GPT models"
+- "Sync the AA data" (run sync-aa)
 
 ## Notes
 
 - Arena data requires network access (downloads from HuggingFace)
-- AA data comes from `data/artificial_analysis.json` — update it using the workflow above
+- AA data comes from the local cache — sync with `compare-models sync-aa`
 - Model aliases are in `data/model_aliases.json`
-- When a model has multiple effort levels (e.g., xhigh, high, medium, low),
-  add each as a separate entry

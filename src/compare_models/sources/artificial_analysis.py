@@ -7,12 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from compare_models import aa_client
 from compare_models.models import ComparisonTable, SourceData
 from compare_models.sources import register_source
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_DATA_PATH = Path(__file__).parent.parent.parent.parent / "data" / "artificial_analysis.json"
 
 METHODOLOGY = """\
 [Artificial Analysis](https://artificialanalysis.ai/) evaluates models using \
@@ -46,10 +45,13 @@ class AAModel(BaseModel):
     slug: str
     organization: str
     intelligence_index: int | None = None
+    coding_index: int | None = None
+    math_index: int | None = None
     speed_tps: float | None = None
     ttft_s: float | None = None
     input_price_per_1m: float | None = None
     output_price_per_1m: float | None = None
+    blended_price_api: float | None = None
     context_window: int | None = None
     params_total_b: float | None = None
     params_active_b: float | None = None
@@ -59,6 +61,8 @@ class AAModel(BaseModel):
 
     @property
     def blended_price(self) -> float | None:
+        if self.blended_price_api is not None:
+            return self.blended_price_api
         if self.input_price_per_1m is not None and self.output_price_per_1m is not None:
             return round((3 * self.input_price_per_1m + self.output_price_per_1m) / 4, 2)
         return None
@@ -74,9 +78,18 @@ class AAModel(BaseModel):
         return total
 
 
-def _load_models(data_path: Path) -> list[AAModel]:
-    with open(data_path) as f:
-        raw = json.load(f)
+def _load_models(data_path: Path | None) -> list[AAModel]:
+    if data_path is not None:
+        with open(data_path) as f:
+            raw = json.load(f)
+    else:
+        raw, fetched_at = aa_client.load_cache()
+        if not raw:
+            raise RuntimeError(
+                "No AA data cache found. Run 'compare-models sync-aa' to fetch data."
+            )
+        age = aa_client.cache_age_display(fetched_at) if fetched_at else "unknown"
+        logger.info("Using cached AA data (synced %s)", age)
     return [m for m in (AAModel(**entry) for entry in raw) if m.intelligence_index is not None]
 
 
@@ -116,25 +129,18 @@ def _comparison_table(
 ) -> ComparisonTable:
     sorted_models = sorted(models, key=lambda m: m.intelligence_index or 0, reverse=True)
 
+    has_coding = any(m.coding_index is not None for m in sorted_models)
+    has_math = any(m.math_index is not None for m in sorted_models)
+
+    headers: list[str] = ["Model"]
     if include_params:
-        headers = [
-            "Model",
-            "Params (total/active)",
-            "AA Intelligence",
-            "Speed (t/s)",
-            "TTFT (s)",
-            "Price ($/1M blend)",
-            "Context",
-        ]
-    else:
-        headers = [
-            "Model",
-            "AA Intelligence",
-            "Speed (t/s)",
-            "TTFT (s)",
-            "Price ($/1M blend)",
-            "Context",
-        ]
+        headers.append("Params (total/active)")
+    headers.append("AA Intelligence")
+    if has_coding:
+        headers.append("Coding")
+    if has_math:
+        headers.append("Math")
+    headers.extend(["Speed (t/s)", "TTFT (s)", "Price ($/1M blend)", "Context"])
 
     rows: list[list[str]] = []
     for m in sorted_models:
@@ -143,29 +149,16 @@ def _comparison_table(
         price = f"${m.blended_price:.2f}" if m.blended_price else "--"
         ctx = f"{m.context_window // 1000}k" if m.context_window else "--"
 
+        row: list[str] = [m.name]
         if include_params:
-            rows.append(
-                [
-                    m.name,
-                    m.params_display,
-                    str(m.intelligence_index),
-                    speed,
-                    ttft,
-                    price,
-                    ctx,
-                ]
-            )
-        else:
-            rows.append(
-                [
-                    m.name,
-                    str(m.intelligence_index),
-                    speed,
-                    ttft,
-                    price,
-                    ctx,
-                ]
-            )
+            row.append(m.params_display)
+        row.append(str(m.intelligence_index))
+        if has_coding:
+            row.append(str(m.coding_index) if m.coding_index is not None else "--")
+        if has_math:
+            row.append(str(m.math_index) if m.math_index is not None else "--")
+        row.extend([speed, ttft, price, ctx])
+        rows.append(row)
 
     return ComparisonTable(
         title=title,
@@ -324,6 +317,28 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
                 f"at {sorted_all[0].intelligence_index}."
             )
 
+        if a_best.coding_index is not None and b_best.coding_index is not None:
+            higher_c = a_best if a_best.coding_index > b_best.coding_index else b_best
+            lower_c = b_best if higher_c == a_best else a_best
+            assert higher_c.coding_index is not None and lower_c.coding_index is not None
+            gap = higher_c.coding_index - lower_c.coding_index
+            gap_desc = _gap_descriptor(gap)
+            findings.append(
+                f"**Coding:** {higher_c.name} leads with Coding Index {higher_c.coding_index} vs "
+                f"{lower_c.name} at {lower_c.coding_index} ({gap_desc} of {gap} points)."
+            )
+
+        if a_best.math_index is not None and b_best.math_index is not None:
+            higher_m = a_best if a_best.math_index > b_best.math_index else b_best
+            lower_m = b_best if higher_m == a_best else a_best
+            assert higher_m.math_index is not None and lower_m.math_index is not None
+            gap = higher_m.math_index - lower_m.math_index
+            gap_desc = _gap_descriptor(gap)
+            findings.append(
+                f"**Math:** {higher_m.name} leads with Math Index {higher_m.math_index} vs "
+                f"{lower_m.name} at {lower_m.math_index} ({gap_desc} of {gap} points)."
+            )
+
         if a_best.speed_tps is not None and b_best.speed_tps is not None:
             faster = a_best if a_best.speed_tps > b_best.speed_tps else b_best
             slower = b_best if faster == a_best else a_best
@@ -405,7 +420,7 @@ class ArtificialAnalysisSource:
     """Artificial Analysis data source."""
 
     def __init__(self, data_path: Path | None = None):
-        self._data_path = data_path or DEFAULT_DATA_PATH
+        self._data_path = data_path
 
     @property
     def name(self) -> str:
@@ -422,7 +437,10 @@ class ArtificialAnalysisSource:
         families: bool = False,
         **kwargs: Any,
     ) -> SourceData:
-        logger.info(f"Loading AA data from {self._data_path}")
+        if self._data_path:
+            logger.info("Loading AA data from %s", self._data_path)
+        else:
+            logger.info("Loading AA data from cache")
         all_models = _load_models(self._data_path)
         matched, not_found = _match_models(all_models, model_names, families=families)
 

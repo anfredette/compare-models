@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use `compare-models sync-aa` instead.
+# This script scrapes AA's website directly. The sync-aa command
+# uses the official AA API, which is the supported access method.
 """Scrape Artificial Analysis model data from individual model pages.
+
+DEPRECATED: Use `compare-models sync-aa` instead.
 
 Extracts data from JSON-LD structured data (FAQPage schema) embedded in each
 model page's HTML. No JavaScript rendering needed.

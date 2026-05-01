@@ -17,7 +17,7 @@ from compare_models.sources.artificial_analysis import (
 
 @pytest.mark.unit
 class TestAAModel:
-    def test_blended_price(self) -> None:
+    def test_blended_price_computed(self) -> None:
         m = AAModel(
             name="Test",
             slug="test",
@@ -27,6 +27,18 @@ class TestAAModel:
             output_price_per_1m=0.80,
         )
         assert m.blended_price == 0.35
+
+    def test_blended_price_api_preferred(self) -> None:
+        m = AAModel(
+            name="Test",
+            slug="test",
+            organization="Org",
+            intelligence_index=30,
+            input_price_per_1m=0.20,
+            output_price_per_1m=0.80,
+            blended_price_api=0.50,
+        )
+        assert m.blended_price == 0.50
 
     def test_blended_price_none(self) -> None:
         m = AAModel(

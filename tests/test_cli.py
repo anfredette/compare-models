@@ -8,13 +8,31 @@ from compare_models.cli import main
 
 @pytest.mark.unit
 class TestCLI:
-    def test_help(self) -> None:
+    def test_group_help(self) -> None:
         runner = CliRunner()
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
+        assert "compare" in result.output
+        assert "sync-aa" in result.output
+
+    def test_compare_help(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(main, ["compare", "--help"])
+        assert result.exit_code == 0
         assert "--models" in result.output
 
-    def test_no_models_error(self) -> None:
+    def test_compare_no_models_error(self) -> None:
         runner = CliRunner()
-        result = runner.invoke(main, [])
+        result = runner.invoke(main, ["compare"])
+        assert result.exit_code != 0
+
+    def test_sync_aa_help(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(main, ["sync-aa", "--help"])
+        assert result.exit_code == 0
+        assert "--api-key" in result.output
+
+    def test_sync_aa_no_key_error(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(main, ["sync-aa"])
         assert result.exit_code != 0

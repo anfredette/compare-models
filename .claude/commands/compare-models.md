@@ -13,9 +13,16 @@ When the user asks to compare models:
    - To also generate a PDF: add `--pdf` (requires pandoc and a LaTeX engine)
 3. Run the command from the compare-models project directory (`/Users/anfredet/go/src/github.com/compare-models/`)
 4. Read the generated report file (parse the path from the CLI's "Comparison written to ..." output)
-5. **Enhance the report with narrative analysis:**
-   - Read all the data tables, head-to-head results, and key findings in the generated file
-   - Write an **Overall Conclusions** section and append it to the file. Structure it as:
+5. **Enhance the Key Findings sections with interpretive prose:**
+   - Read the Arena Key Findings and AA Key Findings sections in the generated file
+   - Rewrite each finding in-place with narrative interpretation, adding:
+     - Context about what the numbers mean practically (e.g., "this places it alongside models like X and Y")
+     - Relative tier placement and what it implies
+     - Implications for deployment decisions (e.g., "well-suited for latency-sensitive applications")
+     - Caveats and limitations worth noting
+   - Keep the same numbered-list format but with richer, more readable prose
+   - Example: transform `**Speed:** X is 2.5x faster (132 vs 52 t/s).` into `**Speed advantage:** X is dramatically faster than comparable Y models: 132 t/s vs 52-55 t/s for the Y 235B variants. This is likely due to X's much smaller active parameter count (13B active vs 22B active) despite having more total parameters.`
+6. **Write an Overall Conclusions section and insert it after the intro/section table (before Part 1).** The template reserves this position. Structure it as:
      1. **Overall positioning** — Where each model/family sits (frontier vs mid-tier vs budget) with specific rank and score evidence from both Arena and AA
      2. **Lineup depth** — How broad each family's lineup is (number of models on each platform)
      3. **Value proposition** — Each side's niche: speed/cost vs quality vs breadth, with specific numbers
@@ -38,8 +45,8 @@ When the user asks to compare models:
 
      7. **Bottom line** — 2-3 sentence prose summary of when to pick each model family
    - Write the conclusions using the actual data from the report — cite specific numbers, ranks, scores, and category names
-6. Summarize the key findings for the user
-7. Offer to explain specific sections in more detail
+7. Summarize the key findings for the user
+8. Offer to explain specific sections in more detail
 
 ## Updating Artificial Analysis Data
 

@@ -3,13 +3,23 @@
 
 **Date:** {{ date }}
 
-**Models compared:** {{ model_names | join(', ') }}
+{{ introduction }}
 
 {% if sources|length > 1 -%}
 | Section | Models Found | Evaluation Method |
-|---------|-------------|-------------------|
+|----------|-------------------------------------------------------------------------------------|-------------------|
 {% for s in sources -%}
 | [Part {{ loop.index }}: {{ s.source_name }}](#part-{{ loop.index }}-{{ s.source_name | lower | replace(' ', '-') }}) | {{ s.models_found | join(', ') or 'None' }} | {{ s.source_description }} |
+{% if not loop.last %}| | | |
+{% endif %}
+{%- endfor %}
+{% endif %}
+{% if overall_conclusions %}
+
+# Overall Conclusions
+
+{% for c in overall_conclusions %}
+{{ loop.index }}. {{ c }}
 {% endfor %}
 {% endif %}
 ---
@@ -67,11 +77,3 @@
 
 ---
 {% endfor %}
-{% if overall_conclusions %}
-
-# Overall Conclusions
-
-{% for c in overall_conclusions %}
-{{ loop.index }}. {{ c }}
-{% endfor %}
-{% endif %}

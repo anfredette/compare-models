@@ -143,7 +143,7 @@ def main(
             )
         pdf_path = output_path.with_suffix(".pdf")
         proc = subprocess.run(
-            ["pandoc", str(output_path), "-o", str(pdf_path)],
+            ["pandoc", str(output_path), "-o", str(pdf_path), "-V", "geometry:margin=1.5cm"],
             capture_output=True,
             text=True,
         )

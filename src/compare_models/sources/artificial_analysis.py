@@ -238,6 +238,37 @@ def _consolidated_ranking_table(
     )
 
 
+def _ratio_qualifier(ratio: float) -> str:
+    if ratio >= 3.0:
+        return "dramatically"
+    if ratio >= 2.0:
+        return "significantly"
+    if ratio >= 1.5:
+        return "notably"
+    return "moderately"
+
+
+def _gap_descriptor(gap: int) -> str:
+    if gap >= 15:
+        return "a large gap"
+    if gap >= 10:
+        return "a substantial gap"
+    if gap >= 5:
+        return "a moderate gap"
+    return "a narrow gap"
+
+
+def _aa_tier_descriptor(rank: int, total: int) -> str:
+    pct = rank / total
+    if pct <= 0.10:
+        return "placing it in the top tier globally"
+    if pct <= 0.33:
+        return "placing it in the upper third globally"
+    if pct <= 0.66:
+        return "placing it in the middle third globally"
+    return "placing it in the lower third globally"
+
+
 def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list[str]:
     findings: list[str] = []
 
@@ -254,7 +285,12 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
     for org, models in orgs.items():
         best = max(models, key=lambda m: m.intelligence_index or 0)
         rank = next((i + 1 for i, m in enumerate(sorted_all) if m.name == best.name), None)
-        rank_str = f", ~rank {rank} of {total}" if rank else ""
+        tier_str = ""
+        if rank:
+            rank_str = f", ~rank {rank} of {total}"
+            tier_str = f", {_aa_tier_descriptor(rank, total)}"
+        else:
+            rank_str = ""
         reasoning_models = [m for m in models if m.reasoning]
         non_reasoning_models = [m for m in models if not m.reasoning]
         parts = []
@@ -265,7 +301,7 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
         variant_str = f" ({', '.join(parts)})" if parts else ""
         findings.append(
             f"**{org}:** Top model is {best.name} "
-            f"(Intelligence Index: {best.intelligence_index}{rank_str}). "
+            f"(Intelligence Index: {best.intelligence_index}{rank_str}){tier_str}. "
             f"{len(models)} model(s) evaluated{variant_str}."
         )
 
@@ -280,9 +316,10 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             higher = a_best if a_score > b_score else b_best
             lower = b_best if higher == a_best else a_best
             gap = (higher.intelligence_index or 0) - (lower.intelligence_index or 0)
+            gap_desc = _gap_descriptor(gap)
             findings.append(
                 f"**Intelligence:** {higher.name} scores {higher.intelligence_index} vs "
-                f"{lower.name} at {lower.intelligence_index} (gap of {gap} points). "
+                f"{lower.name} at {lower.intelligence_index} ({gap_desc} of {gap} points). "
                 f"For context, the top model in AA is {sorted_all[0].name} "
                 f"at {sorted_all[0].intelligence_index}."
             )
@@ -292,6 +329,7 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             slower = b_best if faster == a_best else a_best
             assert faster.speed_tps is not None and slower.speed_tps is not None
             ratio = faster.speed_tps / slower.speed_tps
+            qualifier = _ratio_qualifier(ratio)
             explanation = ""
             if (
                 faster.params_active_b
@@ -304,7 +342,7 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
                     f"{slower.params_active_b:g}B active)."
                 )
             findings.append(
-                f"**Speed:** {faster.name} is {ratio:.1f}x faster "
+                f"**Speed:** {faster.name} is {qualifier} faster at {ratio:.1f}x "
                 f"({faster.speed_tps:.0f} vs {slower.speed_tps:.0f} t/s).{explanation}"
             )
 
@@ -313,8 +351,9 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             slower_ttft = b_best if faster_ttft == a_best else a_best
             assert slower_ttft.ttft_s is not None and faster_ttft.ttft_s is not None
             ratio = slower_ttft.ttft_s / faster_ttft.ttft_s
+            qualifier = _ratio_qualifier(ratio)
             findings.append(
-                f"**Latency:** {faster_ttft.name} has {ratio:.1f}x lower TTFT "
+                f"**Latency:** {faster_ttft.name} has {qualifier} lower TTFT at {ratio:.1f}x "
                 f"({faster_ttft.ttft_s:.2f}s vs {slower_ttft.ttft_s:.2f}s)."
             )
 
@@ -323,8 +362,9 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             pricier = b_best if cheaper == a_best else a_best
             assert pricier.blended_price is not None and cheaper.blended_price is not None
             ratio = pricier.blended_price / cheaper.blended_price
+            qualifier = _ratio_qualifier(ratio)
             findings.append(
-                f"**Price:** {cheaper.name} is {ratio:.1f}x cheaper "
+                f"**Price:** {cheaper.name} is {qualifier} cheaper at {ratio:.1f}x "
                 f"(${cheaper.blended_price:.2f} vs ${pricier.blended_price:.2f}/1M blended tokens)."
             )
 
@@ -334,9 +374,11 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             larger = a_best if a_ctx > b_ctx else b_best
             smaller = b_best if larger == a_best else a_best
             assert larger.context_window is not None and smaller.context_window is not None
+            ratio = larger.context_window / smaller.context_window
             findings.append(
                 f"**Context window:** {larger.name} offers {larger.context_window // 1000}k "
-                f"tokens vs {smaller.context_window // 1000}k for {smaller.name}."
+                f"tokens vs {smaller.context_window // 1000}k for {smaller.name}"
+                f" ({ratio:.0f}x larger)."
             )
 
         if (

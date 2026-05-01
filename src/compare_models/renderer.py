@@ -10,6 +10,35 @@ from compare_models.models import ComparisonResult
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
+def _generate_introduction(result: ComparisonResult) -> str:
+    names = " and ".join(result.model_names)
+    n_sources = len(result.sources)
+
+    if n_sources == 1:
+        intro = (
+            f"This document compares {names} using data from "
+            f"{result.sources[0].source_name}."
+        )
+    else:
+        intro = (
+            f"This document compares {names} using "
+            f"{n_sources} independent evaluation sources."
+        )
+
+    if n_sources >= 2:
+        found_sets = [
+            frozenset(s.models_found) for s in result.sources if s.models_found
+        ]
+        if len(found_sets) >= 2 and len(set(found_sets)) > 1:
+            intro += (
+                " Each source may evaluate different model variants, so the "
+                "sections should be read as complementary views rather than "
+                "direct cross-references."
+            )
+
+    return intro
+
+
 def render_comparison(result: ComparisonResult, output_path: Path) -> str:
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
@@ -24,6 +53,7 @@ def render_comparison(result: ComparisonResult, output_path: Path) -> str:
         model_names=result.model_names,
         sources=result.sources,
         overall_conclusions=result.overall_conclusions,
+        introduction=_generate_introduction(result),
         date=date.today().isoformat(),
     )
 

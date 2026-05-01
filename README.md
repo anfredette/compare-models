@@ -1,23 +1,29 @@
 # compare-models
 
-CLI tool for automated LLM model comparison using multiple evaluation data sources.
+Automated LLM model comparison tool that generates detailed reports from
+multiple evaluation sources. It pulls data from
+[Arena](https://lmarena.ai/) (human preference ratings) and
+[Artificial Analysis](https://artificialanalysis.ai/) (automated benchmarks,
+speed, latency, and pricing), then produces a report with
+global rankings, category breakdowns, head-to-head comparisons, and key
+findings.
 
-## Data Sources
-
-- **Chatbot Arena** — Human preference ratings from head-to-head blind votes (Bradley-Terry ratings across 27 categories)
-- **Artificial Analysis** — Automated benchmarks (Intelligence Index), plus speed, latency, and pricing data
-
-More sources can be added via the provider pattern (e.g., Every Eval Ever).
+The tool works in two modes: a **CLI** that generates data-driven reports with
+deterministic findings, and a **Claude skill** (`/compare-models`) that runs
+the CLI and then layers on narrative analysis with an Overall Conclusions
+section.
 
 ## Installation
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
+git clone https://github.com/anfredette/compare-models.git
+cd compare-models
 uv sync
 ```
 
-**Optional — PDF output** requires [pandoc](https://pandoc.org/installing.html)
+**Optional -- PDF output** requires [pandoc](https://pandoc.org/installing.html)
 and a LaTeX engine (pdflatex, xelatex, or lualatex):
 
 ```bash
@@ -33,10 +39,50 @@ sudo dnf install pandoc texlive-latex
 
 ## Usage
 
-### CLI (data tables and deterministic findings only)
+### Claude Skill (recommended)
+
+The best results come from running inside a
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) session. The
+`/compare-models` skill provides a natural language interface -- just describe
+what you want to compare and Claude handles the rest. It builds the right CLI
+command, reads the generated report, then enhances it with interpretive Key
+Findings and a full Overall Conclusions section covering positioning, value
+proposition, quality profiles, and a side-by-side summary table.
+
+From the `compare-models` project directory:
 
 ```bash
-# Compare specific models — report auto-named in reports/
+cd /path/to/compare-models
+claude
+```
+
+Then use the skill:
+
+```
+/compare-models Compare Trinity vs Qwen model families
+/compare-models How does Gemini 3 stack up against Gemma 4?
+/compare-models Compare just Arena data for trinity and qwen, and generate a PDF
+/compare-models Add Claude Opus 4.7 to the AA data
+```
+
+Claude will:
+1. Parse the natural language request and build the appropriate CLI command
+2. Run the CLI to generate data tables, head-to-head comparisons, and findings
+3. Enhance the Key Findings with narrative interpretation
+4. Write an Overall Conclusions section with positioning analysis, a summary
+   comparison table, and a bottom-line recommendation
+5. Summarize the key findings in the chat
+
+You can also ask follow-up questions about specific sections after the report
+is generated.
+
+### CLI
+
+Use the CLI directly if you don't have a Claude Code session or don't need
+the narrative interpretation.
+
+```bash
+# Compare specific models -- report auto-named in reports/
 uv run compare-models -m "trinity-large-preview,qwen3-235b-a22b"
 
 # Compare entire model families
@@ -56,49 +102,21 @@ Reports are saved to `reports/` with auto-generated names based on the models
 compared, date, and a sequence number (e.g., `qwen_trinity_2026_05_01_00.md`).
 Use `-o` to override the path.
 
-### Claude Code (recommended — adds narrative analysis)
-
-The best output comes from running inside a Claude Code session, which adds an
-**Overall Conclusions** section with narrative analysis on top of the data tables.
-
-From the `compare-models` project directory:
-
-```bash
-cd /path/to/compare-models
-claude
-```
-
-Then use the slash command:
-
-```
-/compare-models Compare Trinity vs Qwen model families
-```
-
-Claude will:
-1. Run the CLI to generate data tables, head-to-head comparisons, and findings
-2. Read the generated report
-3. Write an Overall Conclusions section with positioning analysis, a summary
-   comparison table, and a bottom-line recommendation
-4. Summarize key findings in the chat
-
-You can also run the CLI manually in a Claude session and ask Claude to analyze the
-output — the slash command just automates the workflow.
-
 ## Output Structure
 
 The generated markdown report includes:
 
-- **Global Rankings** — Consolidated leaderboard showing each subject model's
-  neighborhood (±5 models), with `[N models not shown]` gap markers for distant models
-- **Category Ratings** — General capabilities (7 categories) and industry categories
+- **Global Rankings** -- Consolidated leaderboard showing each subject model's
+  neighborhood (+-5 models), with `[N models not shown]` gap markers for distant models
+- **Category Ratings** -- General capabilities (7 categories) and industry categories
   (7 categories) side-by-side
-- **Head-to-Head** — Pairwise comparison across all 14 categories with deltas and
+- **Head-to-Head** -- Pairwise comparison across all 14 categories with deltas and
   winner per category
-- **Win/Loss Summary** — Cross-matchup overview
-- **Key Findings** — Deterministic analytical findings (positioning, strengths,
-  weaknesses, profile characterization)
-- **Overall Conclusions** — Narrative analysis (generated by Claude when using the
-  slash command)
+- **Win/Loss Summary** -- Cross-matchup overview
+- **Key Findings** -- Analytical findings (positioning, strengths, weaknesses,
+  profile characterization)
+- **Overall Conclusions** -- Narrative analysis (added by the `/compare-models`
+  skill)
 
 ## Updating AA Data
 
@@ -110,7 +128,7 @@ uv run python scripts/scrape_aa.py
 
 This scrapes all model pages from artificialanalysis.ai via their sitemap (takes
 ~6 minutes with 1s delay between requests). You can also add individual models
-via the Claude Code slash command — ask Claude to "Add [model name] to the AA data".
+via the `/compare-models` skill -- ask Claude to "Add [model name] to the AA data".
 
 ## Development
 
@@ -131,4 +149,4 @@ make test       # Run all tests
 
 ## License
 
-Not open source — contains proprietary Artificial Analysis data.
+Not open source -- contains proprietary Artificial Analysis data.

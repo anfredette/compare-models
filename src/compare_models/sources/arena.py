@@ -58,7 +58,7 @@ INDUSTRY_CATEGORIES = [
 ]
 
 METHODOLOGY = """\
-[Chatbot Arena](https://lmarena.ai/) (formerly LMSYS) ranks models using \
+[Arena](https://lmarena.ai/) (formerly LMSYS Chatbot Arena) ranks models using \
 **head-to-head human preference votes**. Real users submit prompts to two \
 anonymous models side-by-side, then choose which response they prefer. These \
 pairwise outcomes are aggregated into Bradley-Terry ratings (similar to Elo in \
@@ -161,12 +161,7 @@ def _consolidated_ranking_table(
             )
             rows.append([fmt_rank, fmt_name, fmt_rating, fmt_votes])
 
-    ranked_names = []
-    for pos in sorted(positions):
-        name = overall.iloc[pos]["model_name"]
-        rank = pos + 1
-        ranked_names.append(f"{name} (rank {rank})")
-    title = f"Global Arena Rankings ({total} models total): {', '.join(ranked_names)}"
+    title = f"Global Arena Rankings ({total} models total)"
 
     return ComparisonTable(
         title=title,
@@ -299,6 +294,21 @@ def _win_loss_table(h2hs: list[HeadToHead]) -> ComparisonTable:
     )
 
 
+def _tier_descriptor(rank: int, total: int) -> str:
+    pct = rank / total
+    if pct <= 0.05:
+        return "near the top of the field"
+    if pct <= 0.15:
+        return "in the upper tier"
+    if pct <= 0.35:
+        return "in the upper-middle tier"
+    if pct <= 0.65:
+        return "mid-tier"
+    if pct <= 0.85:
+        return "in the lower-middle tier"
+    return "in the lower tier"
+
+
 def _compute_findings(
     model_names: list[str],
     h2hs: list[HeadToHead],
@@ -349,19 +359,23 @@ def _compute_findings(
         if primary_ranked and secondary_ranked:
             best_primary = min(primary_ranked, key=lambda x: x[1][0])
             best_secondary = min(secondary_ranked, key=lambda x: x[1][0])
+            bp_rank, bp_rating = best_primary[1]
+            bs_rank, bs_rating = best_secondary[1]
+            bp_tier = _tier_descriptor(bp_rank, total)
+            bs_tier = _tier_descriptor(bs_rank, total)
 
             findings.append(
-                f"**Overall positioning:** The top {primary_org} model in Arena is "
-                f"`{best_primary[0]}` (rank {best_primary[1][0]}, rating {best_primary[1][1]:.1f}). "
+                f"**Overall positioning:** The top {primary_org} model is "
+                f"`{best_primary[0]}` (rank {bp_rank} of {total}, rating {bp_rating:.1f}), "
+                f"{bp_tier}. "
                 f"The top {secondary_org} model is `{best_secondary[0]}` "
-                f"(rank {best_secondary[1][0]}, rating {best_secondary[1][1]:.1f}), "
-                f"out of {total} total models."
+                f"(rank {bs_rank}, rating {bs_rating:.1f}), {bs_tier}."
             )
 
             if len(secondary_ranked) > 1:
                 closest = min(
                     secondary_ranked,
-                    key=lambda x: abs(x[1][1] - best_primary[1][1]),
+                    key=lambda x: abs(x[1][1] - bp_rating),
                 )
                 if closest[0] != best_secondary[0]:
                     findings[-1] += (
@@ -370,19 +384,27 @@ def _compute_findings(
                     )
 
     total_cats = len(h2hs[0].dimensions)
-    h2h_summary_parts: list[str] = []
-    for h in h2hs:
-        if h.a_wins > h.b_wins:
-            h2h_summary_parts.append(
-                f"`{h.model_a}` wins {h.a_wins} of {total_cats} categories vs `{h.model_b}`"
-            )
-        elif h.b_wins > h.a_wins:
-            h2h_summary_parts.append(
-                f"`{h.model_a}` loses {h.b_wins} of {total_cats} categories vs `{h.model_b}`"
-            )
-        else:
-            h2h_summary_parts.append(f"`{h.model_a}` ties `{h.model_b}` at {h.a_wins}-{h.b_wins}")
-    findings.append("**Head-to-head summary:** " + ". ".join(h2h_summary_parts) + ".")
+    sweeps = sum(1 for h in h2hs if h.a_wins == total_cats)
+    wins = sum(1 for h in h2hs if h.a_wins > h.b_wins)
+    losses = sum(1 for h in h2hs if h.b_wins > h.a_wins)
+    ties = len(h2hs) - wins - losses
+
+    parts = []
+    if sweeps == len(h2hs):
+        parts.append(
+            f"sweeps all {total_cats} categories in every matchup ({len(h2hs)} matchups)"
+        )
+    else:
+        if sweeps:
+            parts.append(f"sweeps all {total_cats} categories in {sweeps} of {len(h2hs)} matchups")
+        if wins - sweeps > 0:
+            parts.append(f"wins a majority in {wins - sweeps} more")
+        if losses:
+            parts.append(f"loses the majority in {losses}")
+        if ties:
+            parts.append(f"ties {ties}")
+    primary_label = f"`{h2hs[0].model_a}`"
+    findings.append(f"**Head-to-head summary:** {primary_label} " + ", ".join(parts) + ".")
 
     all_dims: dict[str, list[float]] = {}
     for h in h2hs:
@@ -408,10 +430,10 @@ def _compute_findings(
     )
 
     if strengths:
-        primary_label = f"{primary_org}'s" if primary_org else "Primary"
-        details = []
-        for dim, avg, peak, _ in strengths:
-            representative_h2h = next(
+        primary_label_s = f"{primary_org}'s" if primary_org else "Primary"
+        lines = [f"**{primary_label_s} strengths** (wins in every matchup):"]
+        for i, (dim, avg, peak, _) in enumerate(strengths):
+            rep = next(
                 (
                     h
                     for h in h2hs
@@ -419,18 +441,18 @@ def _compute_findings(
                 ),
                 h2hs[0],
             )
-            details.append(
-                f"{dim} (+{avg:.1f} avg, up to +{peak:.1f} vs `{representative_h2h.model_b}`)"
+            annotation = " -- the largest advantage" if i == 0 else ""
+            lines.append(
+                f"   - **{dim}** (+{avg:.1f} avg, up to +{peak:.1f} vs "
+                f"`{rep.model_b}`){annotation}"
             )
-        findings.append(
-            f"**{primary_label} strengths** (wins in every matchup): " + ", ".join(details)
-        )
+        findings.append("\n".join(lines))
 
     if weaknesses:
-        primary_label = f"{primary_org}'s" if primary_org else "Primary"
-        details = []
-        for dim, avg, _, trough in weaknesses:
-            representative_h2h = next(
+        primary_label_s = f"{primary_org}'s" if primary_org else "Primary"
+        if len(weaknesses) == 1:
+            dim, avg, _, trough = weaknesses[0]
+            rep = next(
                 (
                     h
                     for h in h2hs
@@ -438,12 +460,25 @@ def _compute_findings(
                 ),
                 h2hs[0],
             )
-            details.append(
-                f"{dim} ({avg:.1f} avg, as low as {trough:.1f} vs `{representative_h2h.model_b}`)"
+            findings.append(
+                f"**{primary_label_s} weakness:** {dim} is the consistent weak spot, "
+                f"losing in every matchup (avg {avg:.1f}, worst {trough:.1f} vs `{rep.model_b}`)."
             )
-        findings.append(
-            f"**{primary_label} weaknesses** (loses in every matchup): " + ", ".join(details)
-        )
+        else:
+            lines = [f"**{primary_label_s} weaknesses** (loses in every matchup):"]
+            for dim, avg, _, trough in weaknesses:
+                rep = next(
+                    (
+                        h
+                        for h in h2hs
+                        if dim in h.dimensions and h.deltas[h.dimensions.index(dim)] == trough
+                    ),
+                    h2hs[0],
+                )
+                lines.append(
+                    f"   - **{dim}** ({avg:.1f} avg, worst {trough:.1f} vs `{rep.model_b}`)"
+                )
+            findings.append("\n".join(lines))
 
     stem_cats = {"math", "coding", "ind_math", "sw/it", "science"}
     humanities_cats = {"creative", "legal", "writing", "instruct", "expert"}
@@ -458,42 +493,46 @@ def _compute_findings(
         stem_avg = sum(stem_deltas) / len(stem_deltas)
         hum_avg = sum(humanities_deltas) / len(humanities_deltas)
         if abs(stem_avg - hum_avg) > 5:
-            primary_label = primary_org if primary_org else "Primary model"
-            secondary_label = secondary_org if secondary_org else "opponent"
+            p_label = primary_org if primary_org else "Primary model"
+            s_label = secondary_org if secondary_org else "opponent"
             if hum_avg > stem_avg:
                 findings.append(
-                    f"**Profile difference:** {primary_label} has a "
+                    f"**Profile difference:** {p_label} has a "
                     f"humanities-leaning profile (avg delta +{hum_avg:.1f} in "
                     f"creative/legal/writing/instruct/expert vs {stem_avg:+.1f} in "
-                    f"STEM categories). {secondary_label} models generally skew "
+                    f"STEM categories). {s_label} models generally skew "
                     f"toward STEM."
                 )
             else:
                 findings.append(
-                    f"**Profile difference:** {primary_label} has a "
+                    f"**Profile difference:** {p_label} has a "
                     f"STEM-leaning profile (avg delta +{stem_avg:.1f} in "
                     f"STEM categories vs {hum_avg:+.1f} in humanities). "
-                    f"{secondary_label} models lean toward humanities/creative."
+                    f"{s_label} models lean toward humanities/creative."
                 )
 
-    tier_shifts: list[str] = []
-    for h in sorted(h2hs, key=lambda h: h.b_wins):
-        overall_delta = next(
-            (d for dim, d in zip(h.dimensions, h.deltas, strict=False) if dim == "overall"),
-            0.0,
-        )
+    dominates_count = 0
+    dominated_by_count = 0
+    for h in h2hs:
         if h.a_wins >= total_cats - 2:
-            tier_shifts.append(
-                f"dominates `{h.model_b}` ({h.a_wins}/{total_cats}, overall {overall_delta:+.1f})"
-            )
+            dominates_count += 1
         elif h.b_wins >= total_cats - 2:
-            tier_shifts.append(
-                f"is dominated by `{h.model_b}` ({h.b_wins}/{total_cats} losses, "
-                f"overall {overall_delta:+.1f})"
-            )
-    if tier_shifts:
+            dominated_by_count += 1
+
+    if dominates_count or dominated_by_count:
         primary_label = f"`{h2hs[0].model_a}`"
-        findings.append(f"**Cross-tier pattern:** {primary_label} " + "; ".join(tier_shifts) + ".")
+        parts = []
+        if dominates_count:
+            parts.append(
+                f"dominates {dominates_count} opponent{'s' if dominates_count > 1 else ''} "
+                f"(winning nearly all categories)"
+            )
+        if dominated_by_count:
+            parts.append(
+                f"is outclassed by {dominated_by_count} "
+                f"opponent{'s' if dominated_by_count > 1 else ''}"
+            )
+        findings.append(f"**Cross-tier pattern:** {primary_label} " + "; ".join(parts) + ".")
 
     return findings
 
@@ -529,11 +568,11 @@ def _select_h2h_pairs(df: pd.DataFrame, model_names: list[str]) -> list[tuple[st
 
 
 class ArenaSource:
-    """Chatbot Arena data source."""
+    """Arena data source."""
 
     @property
     def name(self) -> str:
-        return "Chatbot Arena"
+        return "Arena"
 
     @property
     def description(self) -> str:

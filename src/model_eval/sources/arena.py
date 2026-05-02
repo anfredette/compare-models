@@ -7,9 +7,10 @@ import pandas as pd
 
 from model_eval import arena_client
 from model_eval.aa_client import cache_age_display, is_cache_stale
-from model_eval.models import ComparisonTable, HeadToHead, SourceData
+from model_eval.models import ComparisonTable, DistributionStats, HeadToHead, SourceData
 from model_eval.resolver import suggest_similar
 from model_eval.sources import register_source
+from model_eval.tiers import arena_gap_significance, tier_label
 
 logger = logging.getLogger(__name__)
 
@@ -109,18 +110,23 @@ def _fetch_arena() -> tuple[pd.DataFrame, str]:
 
 def _resolve_family_models(
     df: pd.DataFrame, family_names: list[str]
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], dict[str, str]]:
+    """Returns (matched_names, not_found, model_to_family_map)."""
     overall = df[df["category"] == "overall"]
     matched: list[str] = []
     not_found: list[str] = []
+    model_family: dict[str, str] = {}
     for family in family_names:
         family_lower = family.lower()
         matches = overall[overall["model_name"].str.lower().str.contains(family_lower)]
         if not matches.empty:
-            matched.extend(matches["model_name"].tolist())
+            names = matches["model_name"].tolist()
+            matched.extend(names)
+            for name in names:
+                model_family[name] = family
         else:
             not_found.append(family)
-    return sorted(set(matched)), not_found
+    return sorted(set(matched)), not_found, model_family
 
 
 def _find_models(df: pd.DataFrame, model_names: list[str]) -> tuple[list[str], list[str]]:
@@ -322,30 +328,15 @@ def _win_loss_table(h2hs: list[HeadToHead]) -> ComparisonTable:
     )
 
 
-def _tier_descriptor(rank: int, total: int) -> str:
-    pct = rank / total
-    if pct <= 0.05:
-        return "near the top of the field"
-    if pct <= 0.15:
-        return "in the upper tier"
-    if pct <= 0.35:
-        return "in the upper-middle tier"
-    if pct <= 0.65:
-        return "mid-tier"
-    if pct <= 0.85:
-        return "in the lower-middle tier"
-    return "in the lower tier"
-
-
 def _compute_findings(
     model_names: list[str],
     h2hs: list[HeadToHead],
     df: pd.DataFrame,
-) -> list[str]:
+) -> tuple[list[str], DistributionStats | None]:
     findings: list[str] = []
 
     if not h2hs:
-        return findings
+        return findings, None
 
     overall = (
         df[df["category"] == "overall"]
@@ -353,6 +344,16 @@ def _compute_findings(
         .reset_index(drop=True)
     )
     total = len(overall)
+
+    dist_cache = arena_client.load_dist_cache()
+    dist_stats: DistributionStats | None = None
+    if dist_cache and "stats" in dist_cache:
+        s = dist_cache["stats"]
+        dist_stats = DistributionStats(
+            count=s["count"], min=s["min"], max=s["max"],
+            median=s["median"], mean=s["mean"], stdev=s["stdev"],
+            p25=s["p25"], p75=s["p75"],
+        )
 
     orgs: dict[str, list[str]] = {}
     for name in model_names:
@@ -372,13 +373,15 @@ def _compute_findings(
         secondary_org = ""
         secondary_models = []
 
-    rankings: dict[str, tuple[int, float]] = {}
+    rankings: dict[str, tuple[int, float, tuple[float, float]]] = {}
     for name in model_names:
         idx = overall[overall["model_name"] == name].index
         if len(idx) > 0:
             pos = idx[0]
-            rating = overall.iloc[pos]["rating"]
-            rankings[name] = (pos + 1, float(rating))
+            row = overall.iloc[pos]
+            rating = float(row["rating"])
+            ci = (float(row.get("rating_lower", rating)), float(row.get("rating_upper", rating)))
+            rankings[name] = (pos + 1, rating, ci)
 
     if rankings:
         primary_ranked = [(n, rankings[n]) for n in primary_models if n in rankings]
@@ -387,17 +390,20 @@ def _compute_findings(
         if primary_ranked and secondary_ranked:
             best_primary = min(primary_ranked, key=lambda x: x[1][0])
             best_secondary = min(secondary_ranked, key=lambda x: x[1][0])
-            bp_rank, bp_rating = best_primary[1]
-            bs_rank, bs_rating = best_secondary[1]
-            bp_tier = _tier_descriptor(bp_rank, total)
-            bs_tier = _tier_descriptor(bs_rank, total)
+            bp_rank, bp_rating, bp_ci = best_primary[1]
+            bs_rank, bs_rating, bs_ci = best_secondary[1]
+            bp_tier = tier_label(bp_rank)
+            bs_tier = tier_label(bs_rank)
+
+            gap_desc = arena_gap_significance(bp_rating, bp_ci, bs_rating, bs_ci)
 
             findings.append(
                 f"**Overall positioning:** The top {primary_org} model is "
                 f"`{best_primary[0]}` (rank {bp_rank} of {total}, rating {bp_rating:.1f}), "
-                f"{bp_tier}. "
+                f"{bp_tier} tier. "
                 f"The top {secondary_org} model is `{best_secondary[0]}` "
-                f"(rank {bs_rank}, rating {bs_rating:.1f}), {bs_tier}."
+                f"(rank {bs_rank}, rating {bs_rating:.1f}), {bs_tier} tier — "
+                f"{gap_desc}."
             )
 
             if len(secondary_ranked) > 1:
@@ -406,9 +412,12 @@ def _compute_findings(
                     key=lambda x: abs(x[1][1] - bp_rating),
                 )
                 if closest[0] != best_secondary[0]:
+                    cl_rank, cl_rating, cl_ci = closest[1]
+                    cl_gap = arena_gap_significance(bp_rating, bp_ci, cl_rating, cl_ci)
                     findings[-1] += (
                         f" The closest {secondary_org} model by rating is "
-                        f"`{closest[0]}` (rank {closest[1][0]}, rating {closest[1][1]:.1f})."
+                        f"`{closest[0]}` (rank {cl_rank}, rating {cl_rating:.1f}) — "
+                        f"{cl_gap}."
                     )
 
     total_cats = len(h2hs[0].dimensions)
@@ -559,7 +568,7 @@ def _compute_findings(
             )
         findings.append(f"**Cross-tier pattern:** {primary_label} " + "; ".join(parts) + ".")
 
-    return findings
+    return findings, dist_stats
 
 
 def _select_h2h_pairs(df: pd.DataFrame, model_names: list[str]) -> list[tuple[str, str]]:
@@ -613,8 +622,9 @@ class ArenaSource:
         df, cache_status = _fetch_arena()
 
         family_not_found: list[str] = []
+        family_map: dict[str, str] = {}
         if families:
-            model_names, family_not_found = _resolve_family_models(df, model_names)
+            model_names, family_not_found, family_map = _resolve_family_models(df, model_names)
 
         found, not_found = _find_models(df, model_names)
         not_found.extend(family_not_found)
@@ -653,11 +663,24 @@ class ArenaSource:
 
         win_loss = _win_loss_table(h2hs) if h2hs else None
 
-        findings = _compute_findings(found, h2hs, df)
+        findings, dist_stats = _compute_findings(found, h2hs, df)
 
         comparison_tables = [subset, general, industry]
         if win_loss:
             comparison_tables.append(win_loss)
+
+        overall = df[df["category"] == "overall"]
+        chart_models = []
+        for name in found:
+            row = overall[overall["model_name"] == name]
+            if not row.empty:
+                r = row.iloc[0]
+                family = family_map.get(name, r.get("organization", "Unknown"))
+                chart_models.append({
+                    "name": name,
+                    "score": float(r["rating"]),
+                    "family": family,
+                })
 
         return SourceData(
             source_name=self.name,
@@ -671,6 +694,8 @@ class ArenaSource:
             models_not_found=not_found,
             suggestions=suggestions,
             cache_status=cache_status,
+            distribution_stats=dist_stats,
+            chart_models=chart_models,
         )
 
 

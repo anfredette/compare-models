@@ -103,21 +103,22 @@ class TestLoadModels:
 @pytest.mark.unit
 class TestMatchModels:
     def test_exact_match(self, sample_aa_models: list[AAModel]) -> None:
-        found, not_found = _match_models(sample_aa_models, ["Alpha Thinking"])
+        found, not_found, _ = _match_models(sample_aa_models, ["Alpha Thinking"])
         assert len(found) == 1
         assert found[0].name == "Alpha Thinking"
 
     def test_slug_match(self, sample_aa_models: list[AAModel]) -> None:
-        found, _ = _match_models(sample_aa_models, ["beta-large"])
+        found, _, _ = _match_models(sample_aa_models, ["beta-large"])
         assert len(found) == 1
         assert found[0].name == "Beta Large"
 
     def test_family_match(self, sample_aa_models: list[AAModel]) -> None:
-        found, _ = _match_models(sample_aa_models, ["Beta"], families=True)
+        found, _, family_map = _match_models(sample_aa_models, ["Beta"], families=True)
         assert len(found) == 2
+        assert all(family_map[m.name] == "Beta" for m in found)
 
     def test_not_found(self, sample_aa_models: list[AAModel]) -> None:
-        _, not_found = _match_models(sample_aa_models, ["nonexistent"])
+        _, not_found, _ = _match_models(sample_aa_models, ["nonexistent"])
         assert not_found == ["nonexistent"]
 
 
@@ -153,9 +154,10 @@ class TestGlobalRanking:
 @pytest.mark.unit
 class TestFindings:
     def test_produces_findings(self, sample_aa_models: list[AAModel]) -> None:
-        findings = _compute_findings(sample_aa_models, sample_aa_models)
+        findings, dist_stats = _compute_findings(sample_aa_models, sample_aa_models)
         assert len(findings) > 0
 
     def test_empty_input(self) -> None:
-        findings = _compute_findings([], [])
+        findings, dist_stats = _compute_findings([], [])
         assert findings == ["No matching models found in AA data."]
+        assert dist_stats is None

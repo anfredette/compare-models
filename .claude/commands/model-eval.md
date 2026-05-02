@@ -33,7 +33,7 @@ When the user asks to evaluate or compare models:
       - Example: transform `**Speed:** X is 2.5x faster (132 vs 52 t/s).` into `**Speed advantage:** X is dramatically faster than comparable Y models: 132 t/s vs 52-55 t/s for the Y 235B variants. This is likely due to X's much smaller active parameter count (13B active vs 22B active) despite having more total parameters.`
 
    b. **Write an Overall Conclusions section and insert it after the intro/section table (before Part 1).** The template reserves this position. Structure it as:
-      1. **Overall positioning** — Where each model/family sits (frontier vs mid-tier vs budget) with specific rank and score evidence from both Arena and AA
+      1. **Overall positioning** — Where each model/family sits using standardized tier names (Frontier, Near-frontier, Upper-mid, Mid-tier, Long-tail) with specific rank and score evidence from both Arena and AA
       2. **Lineup depth** — How broad each family's lineup is (number of models on each platform)
       3. **Value proposition** — Each side's niche: speed/cost vs quality vs breadth, with specific numbers
       4. **Quality profile differences** — STEM-leaning vs humanities-leaning, citing specific category deltas from head-to-head data
@@ -87,7 +87,22 @@ The `--aa-data` flag can override the AA cache with a custom JSON file.
 - "Sync the AA data" (run sync-aa)
 - "Sync the Arena data" (run sync-arena)
 
+## Tier and Gap Language
+
+When writing findings and conclusions, use the standardized vocabulary from the report's Definitions section:
+
+**Tier names** (based on absolute rank): Frontier (1-10), Near-frontier (11-25), Upper-mid (26-75), Mid-tier (76-150), Long-tail (151+). Use these consistently instead of ad-hoc phrases like "top tier" or "upper third."
+
+**Gap significance language:**
+- Arena: "statistically indistinguishable" / "small but statistically significant difference" / "clear separation" (based on confidence interval overlap)
+- AA: "not clearly distinguishable" / "moderate difference" / "clear separation" (based on population stdev)
+
+Calibrate language about model gaps to the actual distribution. A 42-point Arena gap may sound large but could be only 0.35 stdev — don't overstate it. The generated findings already use these terms; align your prose analysis accordingly.
+
+**Distribution charts** are auto-generated alongside the report (PNG files). No manual action needed — they appear in the report between the About section and Key Findings for each source.
+
 ## Notes
 
 - Both data sources cache locally in `.model_cache/` and auto-refresh if older than 24 hours
+- Distribution stats are cached in `.model_cache/` and recomputed on sync
 - Arena data is public (HuggingFace); AA data requires `AA_API_KEY`

@@ -8,9 +8,12 @@ from model_eval.aa_client import (
     _infer_reasoning,
     _map_api_model,
     cache_age_display,
+    compute_distribution,
     is_cache_stale,
     load_cache,
+    load_dist_cache,
     save_cache,
+    save_dist_cache,
 )
 
 
@@ -165,3 +168,44 @@ class TestIsCacheStale:
 
     def test_invalid_is_stale(self) -> None:
         assert is_cache_stale("not-a-date") is True
+
+
+@pytest.mark.unit
+class TestDistribution:
+    def test_compute_distribution(self) -> None:
+        models = [{"intelligence_index": i} for i in range(10, 60)]
+        dist = compute_distribution(models)
+        assert dist["stats"]["count"] == 50
+        assert dist["stats"]["min"] == 10
+        assert dist["stats"]["max"] == 59
+        assert len(dist["scores"]) == 50
+
+    def test_compute_distribution_filters_none(self) -> None:
+        models = [
+            {"intelligence_index": 50},
+            {"intelligence_index": None},
+            {"intelligence_index": 30},
+        ]
+        dist = compute_distribution(models)
+        assert dist["stats"]["count"] == 2
+
+    def test_compute_distribution_all_none(self) -> None:
+        models = [{"intelligence_index": None}]
+        with pytest.raises(ValueError, match="No models with intelligence_index"):
+            compute_distribution(models)
+
+    def test_dist_cache_round_trip(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        import model_eval.aa_client as mod
+
+        monkeypatch.setattr(mod, "_PROJECT_ROOT", tmp_path)
+        dist = {
+            "stats": {"count": 5, "min": 10.0, "max": 50.0, "median": 30.0,
+                       "mean": 30.0, "stdev": 15.0, "p25": 20.0, "p75": 40.0},
+            "scores": [10, 20, 30, 40, 50],
+        }
+        path = save_dist_cache(dist)
+        assert path.exists()
+
+        loaded = load_dist_cache()
+        assert loaded is not None
+        assert loaded["stats"]["count"] == 5

@@ -22,4 +22,9 @@ reports/
 
 # Data caches and backups
 .model_cache/
-aa_models_backup.json
+
+# macOS
+.DS_Store
+
+# Superpowers session artifacts
+.superpowers/

@@ -182,6 +182,81 @@ def is_cache_stale(fetched_at: str | None, max_age_hours: int = 24) -> bool:
     return age.total_seconds() > max_age_hours * 3600
 
 
+def get_dist_cache_path() -> Path:
+    return get_cache_dir() / "aa_dist.json"
+
+
+def compute_distribution(models: list[dict]) -> dict:
+    """Compute distribution stats from intelligence_index values."""
+    import statistics
+
+    scores = [
+        m["intelligence_index"]
+        for m in models
+        if m.get("intelligence_index") is not None
+    ]
+    if not scores:
+        raise ValueError("No models with intelligence_index found in AA data")
+
+    scores_sorted = sorted(scores)
+    n = len(scores_sorted)
+    p25_idx = int(n * 0.25)
+    p75_idx = int(n * 0.75)
+
+    return {
+        "stats": {
+            "count": n,
+            "min": min(scores),
+            "max": max(scores),
+            "median": statistics.median(scores),
+            "mean": statistics.mean(scores),
+            "stdev": statistics.stdev(scores) if n > 1 else 0.0,
+            "p25": scores_sorted[p25_idx],
+            "p75": scores_sorted[p75_idx],
+        },
+        "scores": scores_sorted,
+    }
+
+
+def save_dist_cache(dist: dict) -> Path:
+    """Write distribution stats to cache file."""
+    cache_path = get_dist_cache_path()
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fd, tmp_path = tempfile.mkstemp(dir=cache_path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(dist, f)
+        os.replace(tmp_path, cache_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+    return cache_path
+
+
+def load_dist_cache() -> dict | None:
+    """Load cached distribution stats. Computes from model cache if missing."""
+    cache_path = get_dist_cache_path()
+    if cache_path.exists():
+        try:
+            with open(cache_path) as f:
+                return json.load(f)  # type: ignore[no-any-return]
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Corrupt dist cache file %s: %s", cache_path, e)
+
+    models, _ = load_cache()
+    if not models:
+        return None
+    try:
+        dist = compute_distribution(models)
+        save_dist_cache(dist)
+        return dist
+    except ValueError:
+        return None
+
+
 def sync(api_key: str) -> tuple[int, Path]:
     """Fetch from API, map models, save to cache. Returns (model_count, cache_path)."""
     logger.info("Fetching models from AA API...")
@@ -197,4 +272,9 @@ def sync(api_key: str) -> tuple[int, Path]:
     )
 
     cache_path = save_cache(mapped)
+
+    dist = compute_distribution(mapped)
+    dist_path = save_dist_cache(dist)
+    logger.info("Distribution stats cached to %s (%d models)", dist_path, dist["stats"]["count"])
+
     return len(mapped), cache_path

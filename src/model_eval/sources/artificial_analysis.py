@@ -9,9 +9,10 @@ from typing import Any
 from pydantic import BaseModel
 
 from model_eval import aa_client
-from model_eval.models import ComparisonTable, SourceData
+from model_eval.models import ComparisonTable, DistributionStats, SourceData
 from model_eval.resolver import suggest_similar
 from model_eval.sources import register_source
+from model_eval.tiers import aa_gap_significance, tier_label
 
 logger = logging.getLogger(__name__)
 
@@ -142,18 +143,22 @@ def _normalize(s: str) -> str:
 
 def _match_models(
     models: list[AAModel], names: list[str], *, families: bool = False
-) -> tuple[list[AAModel], list[str]]:
+) -> tuple[list[AAModel], list[str], dict[str, str]]:
     if families:
         matched: list[AAModel] = []
         not_found_families: list[str] = []
+        family_map: dict[str, str] = {}
         for name in names:
             norm = _normalize(name)
             family_matches = [m for m in models if norm in _normalize(m.name)]
             if family_matches:
                 matched.extend(family_matches)
+                for m in family_matches:
+                    family_map[m.name] = name
             else:
                 not_found_families.append(name)
-        return list({m.name: m for m in matched}.values()), not_found_families
+        deduped = list({m.name: m for m in matched}.values())
+        return deduped, not_found_families, family_map
 
     found: list[AAModel] = []
     found_names: set[str] = set()
@@ -167,7 +172,7 @@ def _match_models(
                 break
 
     not_found = [n for n in names if n not in found_names]
-    return found, not_found
+    return found, not_found, {}
 
 
 def _comparison_table(
@@ -263,11 +268,7 @@ def _consolidated_ranking_table(
             fmt_score = f"**{m.intelligence_index}**" if is_target else str(m.intelligence_index)
             rows.append([fmt_rank, fmt_name, fmt_score])
 
-    ranked_names = []
-    for pos in sorted(positions):
-        m = sorted_all[pos]
-        ranked_names.append(f"{m.name} (rank {pos + 1})")
-    title = f"Global AA Rankings ({total} models total): {', '.join(ranked_names)}"
+    title = f"Global AA Rankings ({total} models total)"
 
     return ComparisonTable(
         title=title,
@@ -287,35 +288,28 @@ def _ratio_qualifier(ratio: float) -> str:
     return "moderately"
 
 
-def _gap_descriptor(gap: int) -> str:
-    if gap >= 15:
-        return "a large gap"
-    if gap >= 10:
-        return "a substantial gap"
-    if gap >= 5:
-        return "a moderate gap"
-    return "a narrow gap"
-
-
-def _aa_tier_descriptor(rank: int, total: int) -> str:
-    pct = rank / total
-    if pct <= 0.10:
-        return "placing it in the top tier globally"
-    if pct <= 0.33:
-        return "placing it in the upper third globally"
-    if pct <= 0.66:
-        return "placing it in the middle third globally"
-    return "placing it in the lower third globally"
-
-
-def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list[str]:
+def _compute_findings(
+    matched: list[AAModel], all_models: list[AAModel],
+) -> tuple[list[str], DistributionStats | None]:
     findings: list[str] = []
 
     if not matched:
-        return ["No matching models found in AA data."]
+        return ["No matching models found in AA data."], None
 
     sorted_all = sorted(all_models, key=lambda m: m.intelligence_index or 0, reverse=True)
     total = len(sorted_all)
+
+    dist_cache = aa_client.load_dist_cache()
+    dist_stats: DistributionStats | None = None
+    population_stdev = 0.0
+    if dist_cache and "stats" in dist_cache:
+        s = dist_cache["stats"]
+        dist_stats = DistributionStats(
+            count=s["count"], min=s["min"], max=s["max"],
+            median=s["median"], mean=s["mean"], stdev=s["stdev"],
+            p25=s["p25"], p75=s["p75"],
+        )
+        population_stdev = s["stdev"]
 
     orgs: dict[str, list[AAModel]] = {}
     for m in matched:
@@ -327,7 +321,7 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
         tier_str = ""
         if rank:
             rank_str = f", ~rank {rank} of {total}"
-            tier_str = f", {_aa_tier_descriptor(rank, total)}"
+            tier_str = f", {tier_label(rank)} tier"
         else:
             rank_str = ""
         reasoning_models = [m for m in models if m.reasoning]
@@ -354,11 +348,14 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
         if a_score != b_score:
             higher = a_best if a_score > b_score else b_best
             lower = b_best if higher == a_best else a_best
-            gap = (higher.intelligence_index or 0) - (lower.intelligence_index or 0)
-            gap_desc = _gap_descriptor(gap)
+            h_score = higher.intelligence_index or 0
+            l_score = lower.intelligence_index or 0
+            gap = h_score - l_score
+            gap_desc = aa_gap_significance(float(h_score), float(l_score), population_stdev)
             findings.append(
                 f"**Intelligence:** {higher.name} scores {higher.intelligence_index} vs "
-                f"{lower.name} at {lower.intelligence_index} ({gap_desc} of {gap} points). "
+                f"{lower.name} at {lower.intelligence_index} "
+                f"({gap} points, {gap_desc}). "
                 f"For context, the top model in AA is {sorted_all[0].name} "
                 f"at {sorted_all[0].intelligence_index}."
             )
@@ -368,10 +365,12 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             lower_c = b_best if higher_c == a_best else a_best
             assert higher_c.coding_index is not None and lower_c.coding_index is not None
             gap = higher_c.coding_index - lower_c.coding_index
-            gap_desc = _gap_descriptor(gap)
+            gap_desc = aa_gap_significance(
+                float(higher_c.coding_index), float(lower_c.coding_index), population_stdev,
+            )
             findings.append(
                 f"**Coding:** {higher_c.name} leads with Coding Index {higher_c.coding_index} vs "
-                f"{lower_c.name} at {lower_c.coding_index} ({gap_desc} of {gap} points)."
+                f"{lower_c.name} at {lower_c.coding_index} ({gap} points, {gap_desc})."
             )
 
         if a_best.math_index is not None and b_best.math_index is not None:
@@ -379,10 +378,12 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
             lower_m = b_best if higher_m == a_best else a_best
             assert higher_m.math_index is not None and lower_m.math_index is not None
             gap = higher_m.math_index - lower_m.math_index
-            gap_desc = _gap_descriptor(gap)
+            gap_desc = aa_gap_significance(
+                float(higher_m.math_index), float(lower_m.math_index), population_stdev,
+            )
             findings.append(
                 f"**Math:** {higher_m.name} leads with Math Index {higher_m.math_index} vs "
-                f"{lower_m.name} at {lower_m.math_index} ({gap_desc} of {gap} points)."
+                f"{lower_m.name} at {lower_m.math_index} ({gap} points, {gap_desc})."
             )
 
         if a_best.speed_tps is not None and b_best.speed_tps is not None:
@@ -459,7 +460,7 @@ def _compute_findings(matched: list[AAModel], all_models: list[AAModel]) -> list
                 f"{b_best.params_active_b:g}B active."
             )
 
-    return findings
+    return findings, dist_stats
 
 
 class ArtificialAnalysisSource:
@@ -484,7 +485,7 @@ class ArtificialAnalysisSource:
         **kwargs: Any,
     ) -> SourceData:
         all_models, cache_status = _load_models(self._data_path)
-        matched, not_found = _match_models(all_models, model_names, families=families)
+        matched, not_found, family_map = _match_models(all_models, model_names, families=families)
 
         suggestions: dict[str, list[str]] = {}
         if not_found:
@@ -510,10 +511,7 @@ class ArtificialAnalysisSource:
         for m in matched:
             orgs.setdefault(m.organization, []).append(m)
 
-        best_per_org = [
-            max(org_models, key=lambda m: m.intelligence_index or 0) for org_models in orgs.values()
-        ]
-        global_rankings = [_consolidated_ranking_table(all_models, best_per_org)]
+        global_rankings = [_consolidated_ranking_table(all_models, matched)]
 
         comparison_tables: list[ComparisonTable] = []
 
@@ -530,7 +528,17 @@ class ArtificialAnalysisSource:
                 _comparison_table(matched, title="All Models", include_params=False)
             )
 
-        findings = _compute_findings(matched, all_models)
+        findings, dist_stats = _compute_findings(matched, all_models)
+
+        chart_models = [
+            {
+                "name": m.name,
+                "score": float(m.intelligence_index or 0),
+                "family": family_map.get(m.name, m.organization),
+            }
+            for m in matched
+            if m.intelligence_index is not None
+        ]
 
         return SourceData(
             source_name=self.name,
@@ -543,6 +551,8 @@ class ArtificialAnalysisSource:
             models_not_found=not_found,
             suggestions=suggestions,
             cache_status=cache_status,
+            distribution_stats=dist_stats,
+            chart_models=chart_models,
         )
 
 

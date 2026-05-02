@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -39,6 +40,20 @@ class HeadToHead:
 
 
 @dataclass
+class DistributionStats:
+    """Population-level statistics for a score distribution."""
+
+    count: int
+    min: float
+    max: float
+    median: float
+    mean: float
+    stdev: float
+    p25: float
+    p75: float
+
+
+@dataclass
 class SourceData:
     """All data produced by a single data source for a comparison."""
 
@@ -53,6 +68,9 @@ class SourceData:
     models_not_found: list[str] = field(default_factory=list)
     suggestions: dict[str, list[str]] = field(default_factory=dict)
     cache_status: str | None = None
+    distribution_stats: DistributionStats | None = None
+    chart_path: Path | None = None
+    chart_models: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass

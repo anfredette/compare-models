@@ -13,6 +13,8 @@ import click
 
 import model_eval.sources.arena  # noqa: F401
 import model_eval.sources.artificial_analysis  # noqa: F401
+from model_eval import aa_client, arena_client
+from model_eval.charts import generate_distribution_chart
 from model_eval.models import ComparisonResult
 from model_eval.renderer import render_comparison
 from model_eval.sources import get_available_sources, get_source
@@ -149,6 +151,31 @@ def main(
 
     output_path = Path(output) if output else generate_output_path(model_names)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    dist_loaders = {
+        "Arena": arena_client.load_dist_cache,
+        "Artificial Analysis": aa_client.load_dist_cache,
+    }
+    for source_data in result.sources:
+        loader = dist_loaders.get(source_data.source_name)
+        if not loader or not source_data.chart_models:
+            continue
+        dist_cache = loader()
+        if not dist_cache or "scores" not in dist_cache:
+            continue
+        stats = dist_cache.get("stats", {})
+        chart_name = source_data.source_name.lower().replace(" ", "_")
+        chart_path = output_path.with_name(f"{output_path.stem}_{chart_name}_dist.png")
+        generate_distribution_chart(
+            all_scores=dist_cache["scores"],
+            evaluated_models=source_data.chart_models,
+            output_path=chart_path,
+            source_name=f"{source_data.source_name} Rating",
+            median=stats.get("median", 0),
+        )
+        source_data.chart_path = Path(chart_path.name)
+        click.echo(f"Chart written to {chart_path}")
+
     render_comparison(result, output_path)
     click.echo(f"Comparison written to {output_path}")
 

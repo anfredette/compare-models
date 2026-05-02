@@ -46,8 +46,16 @@
 
 ---
 {% if source.global_rankings %}
+{% if source.chart_path %}
+
+\newpage
+{% endif %}
 
 ## {{ source.global_rankings[0].title }}
+{% if source.chart_path %}
+
+![{{ source.source_name }} Distribution]({{ source.chart_path }})\
+{% endif %}
 
 {{ render_table(source.global_rankings[0]) }}
 
@@ -80,6 +88,28 @@
 
 ---
 {% endfor %}
+
+---
+
+## Definitions
+
+### Model Tiers
+
+Tiers are based on absolute rank within each data source:
+
+| Tier | Rank Range |
+|------|-----------|
+| Frontier | 1–10 |
+| Near-frontier | 11–25 |
+| Upper-mid | 26–75 |
+| Mid-tier | 76–150 |
+| Long-tail | 151+ |
+
+### Gap Significance
+
+**Arena** — uses per-model confidence intervals (CI). If CIs overlap, the models are "statistically indistinguishable." If CIs don't overlap but the closest bounds are within 20 points, the difference is "small but statistically significant." A gap of 20+ points between closest bounds indicates "clear separation."
+
+**Artificial Analysis** — uses gap relative to population standard deviation. A gap below 0.5 stdev is "not clearly distinguishable," 0.5–1.0 stdev indicates a "moderate difference," and above 1.0 stdev indicates "clear separation."
 
 ---
 
